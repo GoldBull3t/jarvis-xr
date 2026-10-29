@@ -143,15 +143,56 @@ class JarvisApp {
     // Responde a ações disparadas pelos botões dentro dos painéis 3D
     this.spatialPanels.onPanelAction = async (action, panelId, data) => {
       if (action === 'refresh_data') {
-        this.speakFeedback('A atualizar métricas do homelab.');
+        this.speakFeedback('A atualizar métricas do homelab, senhor.');
         await this.loadInitialData();
-      } else if (action === 'open_ha_native') {
-        this.speakFeedback('A abrir dashboard interativo do Home Assistant.');
-        this.uiOverlay.switchTab('home');
-        this.uiOverlay.setHomeViewMode('native');
-      } else if (action === 'toggle_light') {
-        this.speakFeedback('Comando enviado para a entidade.');
-        await this.toggleEntity(data?.entity_id || 'light.escritorio', 'light');
+      } else if (action === 'toggle_entity') {
+        await this.toggleEntity(data?.entity_id || 'light.escritorio', data?.domain || 'light');
+      } else if (action === 'temp_up' || action === 'temp_down') {
+        const delta = action === 'temp_up' ? 0.5 : -0.5;
+        this.speakFeedback(`A ajustar climatização em ${delta > 0 ? '+0.5' : '-0.5'} graus.`);
+        soundFX.playSuccessTone();
+      } else if (action === 'macro_lab') {
+        this.speakFeedback('Modo Laboratório ativado, senhor.');
+        soundFX.playSuccessTone();
+        if (this.homeData?.authorized_entities) {
+          const l = this.homeData.authorized_entities.find(e => e.domain === 'light');
+          if (l) await this.handleEntityAction(l.entity_id, 'light', 'turn_on', { brightness: 255 });
+        }
+      } else if (action === 'macro_cinema') {
+        this.speakFeedback('Modo Cinema ativado. A atenuar luzes.');
+        soundFX.playSuccessTone();
+        if (this.homeData?.authorized_entities) {
+          const l = this.homeData.authorized_entities.find(e => e.domain === 'light');
+          if (l) await this.handleEntityAction(l.entity_id, 'light', 'turn_on', { brightness: 40 });
+        }
+      } else if (action === 'macro_night' || action === 'macro_off') {
+        this.speakFeedback('A desligar dispositivos não essenciais, senhor.');
+        soundFX.playSuccessTone();
+        if (this.homeData?.authorized_entities) {
+          for (const l of this.homeData.authorized_entities.filter(e => e.domain === 'light' && e.state === 'on')) {
+            await this.handleEntityAction(l.entity_id, 'light', 'turn_off');
+          }
+        }
+      } else if (action === 'action_vm') {
+        if (data?.vmid && data?.action) {
+          await this.handleVmAction(data.vmid, data.action, data.vmName);
+        }
+      } else if (action === 'pause_dns_5m') {
+        soundFX.playSuccessTone();
+        this.speakFeedback('Escudo de proteção cibernética ativo na rede LAN, senhor.');
+        await this.loadInitialData();
+      } else if (action === 'refresh_dns') {
+        soundFX.playSuccessTone();
+        this.speakFeedback('A atualizar regras do escudo cibernético.');
+        await this.loadInitialData();
+      } else if (action === 'run_diagnostics') {
+        await this.loadDiagnostics();
+      } else if (action === 'push_to_talk') {
+        if (speechService.isCurrentlyListening()) {
+          speechService.stopListening();
+        } else {
+          speechService.startListening();
+        }
       } else if (action === 'open_panel_camera') {
         this.speakFeedback('A carregar visão da câmara.');
         this.spatialPanels.setVisible('camera', true);
@@ -166,7 +207,7 @@ class JarvisApp {
         const url = this.spatialPanels.getCameraSnapshotUrl();
         if (url) window.open(url, '_blank');
       } else if (action === 'close_panel') {
-        this.speakFeedback(`Painel ${panelId} recolhido.`);
+        this.speakFeedback(`Painel ${panelId} recolhido, senhor.`);
       }
 
       this.xrManager.setInteractiveObjects(this.spatialPanels.getInteractiveMeshes());
@@ -320,16 +361,20 @@ class JarvisApp {
       const btnEnterXR = document.getElementById('btn-enter-xr') as HTMLButtonElement;
       btnEnterXR.textContent = 'SAIR DO MODO XR';
 
+      const uiOverlayElem = document.getElementById('ui-overlay');
+      if (uiOverlayElem) uiOverlayElem.style.display = 'none';
+
       session.addEventListener('end', async () => {
         this.xrSession = null;
         this.isArActive = false;
         this.backgroundManager.setArPassthrough(false);
         btnEnterXR.textContent = mode === 'immersive-ar' ? 'INICIAR SESSÃO AR (PASSTHROUGH)' : 'INICIAR SESSÃO VR';
+        if (uiOverlayElem) uiOverlayElem.style.display = 'flex';
         await api.sendPresence(false);
       });
 
       soundFX.playHoloDeploy();
-      this.speakFeedback('Modo imersivo Meta Quest ativado. Tracking de mãos e controladores operacional.');
+      this.speakFeedback('Protocolo JARVIS XR inicializado, senhor. Realidade mista e telemetria ativas.');
     } catch (err: any) {
       console.error('Falha ao iniciar WebXR:', err);
       soundFX.playAlert();
@@ -660,67 +705,25 @@ class JarvisApp {
     pve?: ProxmoxSummaryData | null,
     dns?: DnsSummaryData | null
   ) {
-    // 1. Painel Domótica
-    if (home && home.configured && home.status === 'operational') {
-      const temp = home.temperature_celsius ?? 'N/D';
-      const hum = home.humidity_percent ?? 'N/D';
-      const powerStr = home.power_consumption_watts !== null && home.power_consumption_watts !== undefined
-        ? ` | Potência: ${home.power_consumption_watts.toFixed(0)}W`
-        : '';
-      const secStr = home.binary_sensors_alert && home.binary_sensors_alert > 0
-        ? `⚠️ ${home.binary_sensors_alert} Alerta(s)`
-        : '🟢 Segura';
+    this.spatialPanels.setTelemetryData({
+      demo,
+      home: home || null,
+      pve: pve || null,
+      dns: dns || null,
+      diag: this.diagnosticsData,
+      services: this.servicesData
+    });
 
-      this.spatialPanels.updatePanelContent('home', 'DOMÓTICA // HOME ASSISTANT TOTAL', [
-        `Ambiente: ${temp} °C | Hum: ${hum}%${powerStr}`,
-        `Luzes: ${home.lights_on}/${home.total_lights} | Tomadas: ${home.switches_on}/${home.total_switches}`,
-        `Segurança Perimétrica: ${secStr}`,
-        `Divisões: ${(home.areas || []).slice(0, 3).join(', ') || 'Global'}`,
-        `Câmaras: ${home.cameras_count || 0} | Cenas: ${home.scenes_count || 0}`
-      ]);
-    } else {
-      this.spatialPanels.updatePanelContent('home', 'DOMÓTICA // HOME [DEMO]', [
-        `Temp: ${demo.home.temperature_celsius} °C | Hum: ${demo.home.humidity_percent}%`,
-        `Luzes Ativas: ${demo.home.lights_on} / ${demo.home.total_lights}`,
-        `Entidade: ${demo.home.entities[0].name} [${demo.home.entities[0].state.toUpperCase()}]`,
-        `Tomada: ${demo.home.entities[2].name} [${demo.home.entities[2].state.toUpperCase()}]`
-      ]);
+    // Se houver alertas críticos perimétricos ou falha em nós do cluster, pulsa o Arc Reactor (Question 15)
+    const hasAlert = (home && home.binary_sensors_alert && home.binary_sensors_alert > 0) ||
+                    (pve && pve.nodes_online < pve.total_nodes);
+    if (hasAlert) {
+      this.coreVisualizer.setStatus('error');
+    } else if (!speechService.isCurrentlyListening()) {
+      this.coreVisualizer.setStatus('normal');
     }
 
-    // 2. Painel Proxmox VE
-    if (pve && pve.configured && pve.status === 'operational') {
-      const topVm = pve.vms.length > 0 ? `[${pve.vms[0].vmid}] ${pve.vms[0].name} [${pve.vms[0].status.toUpperCase()}]` : 'Sem VMs ativas';
-      this.spatialPanels.updatePanelContent('proxmox', 'PROXMOX // VE HOST [REAL]', [
-        `Cluster: ${pve.cluster_name} (Nós: ${pve.nodes_online}/${pve.total_nodes})`,
-        `CPU: ${pve.cpu_usage_percent}% | RAM: ${pve.ram_used_gb}/${pve.ram_total_gb}GB (${pve.ram_usage_percent}%)`,
-        `VMs / Containers: ${pve.vms_running} ativos de ${pve.total_vms}`,
-        topVm
-      ]);
-    } else {
-      this.spatialPanels.updatePanelContent('proxmox', 'PROXMOX // VE HOST [DEMO]', [
-        `Cluster: ${demo.proxmox.cluster_name}`,
-        `CPU: ${demo.proxmox.cpu_usage_percent}% | RAM: ${demo.proxmox.ram_used_gb}/${demo.proxmox.ram_total_gb}GB`,
-        `VMs Ativas: ${demo.proxmox.vms_running} / ${demo.proxmox.total_vms}`,
-        `VM 100: ${demo.proxmox.vms[0].name} [RUNNING]`
-      ]);
-    }
-
-    // 3. Painel Rede / DNS
-    if (dns && dns.configured && dns.status === 'operational') {
-      this.spatialPanels.updatePanelContent('network', `REDE & DNS // ${dns.provider.toUpperCase()} [REAL]`, [
-        `Estado: OPERACIONAL | Clientes: ${dns.clients_active} IPs`,
-        `Consultas Hoje: ${dns.queries_today.toLocaleString()}`,
-        `Ameaças Bloqueadas: ${dns.blocked_today.toLocaleString()} (${dns.block_percentage}%)`,
-        `Filtragem Ativa no Router/LAN`
-      ]);
-    } else {
-      this.spatialPanels.updatePanelContent('network', 'REDE & DNS // SHIELD [DEMO]', [
-        `Fornecedor: ${demo.dns.provider}`,
-        `Consultas Hoje: ${demo.dns.queries_today.toLocaleString()}`,
-        `Bloqueadas: ${demo.dns.blocked_today.toLocaleString()} (${demo.dns.block_percentage}%)`,
-        `Clientes Ativos: ${demo.dns.clients_active} IPs`
-      ]);
-    }
+    this.xrManager.setInteractiveObjects(this.spatialPanels.getInteractiveMeshes());
   }
 
   private setupVoiceInteractions() {
@@ -827,6 +830,7 @@ class JarvisApp {
     const elapsed = this.clock.getElapsedTime();
 
     this.coreVisualizer.update(delta, elapsed);
+    this.spatialPanels.update(delta, this.camera);
 
     // Pilar 2: Atualização do arrasto e rotação fluida dos painéis 3D no espaço
     if (this.spatialPanels.isGrabbing()) {

@@ -171,25 +171,31 @@ export class XRManager {
 
   private handleSelectStart(controllerIndex: number) {
     const hit = this.raycastController(controllerIndex);
-    if (hit && this.onSelectStartCallback) {
-      this.onSelectStartCallback({
-        intersectedObject: hit.object,
-        point: hit.point,
-        uv: hit.uv,
-        controllerIndex
-      });
+    if (hit) {
+      this.triggerHaptic(controllerIndex, 0.4, 30);
+      if (this.onSelectStartCallback) {
+        this.onSelectStartCallback({
+          intersectedObject: hit.object,
+          point: hit.point,
+          uv: hit.uv,
+          controllerIndex
+        });
+      }
     }
   }
 
   private handleSqueezeStart(controllerIndex: number) {
     const hit = this.raycastController(controllerIndex);
-    if (hit && this.onSqueezeStartCallback) {
-      this.onSqueezeStartCallback({
-        intersectedObject: hit.object,
-        point: hit.point,
-        uv: hit.uv,
-        controllerIndex
-      });
+    if (hit) {
+      this.triggerHaptic(controllerIndex, 0.7, 60);
+      if (this.onSqueezeStartCallback) {
+        this.onSqueezeStartCallback({
+          intersectedObject: hit.object,
+          point: hit.point,
+          uv: hit.uv,
+          controllerIndex
+        });
+      }
     }
   }
 
@@ -229,15 +235,17 @@ export class XRManager {
   }
 
   /**
-   * Feedback háptico de vibração leve no comando Touch Plus (se suportado)
+   * Feedback háptico de vibração tátil nos comandos Meta Quest Touch Plus (Question 14)
    */
-  private triggerHaptic(controllerIndex: number) {
+  public triggerHaptic(controllerIndex: number = 0, intensity: number = 0.5, durationMs: number = 40) {
     const session = this.renderer.xr.getSession();
     if (!session || !session.inputSources) return;
 
     const source = session.inputSources[controllerIndex];
     if (source && source.gamepad && source.gamepad.hapticActuators && source.gamepad.hapticActuators.length > 0) {
-      source.gamepad.hapticActuators[0].pulse(0.4, 40); // 40ms de vibração sutil
+      try {
+        source.gamepad.hapticActuators[0].pulse(intensity, durationMs);
+      } catch {}
     }
   }
 
