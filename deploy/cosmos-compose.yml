@@ -1,69 +1,86 @@
 # ==============================================================================
-# JARVIS XR — COMPOSE PARA COSMOS CLOUD (SERVAPP)
-# Utiliza as imagens pré-compiladas automaticamente pelo GitHub Actions (GHCR)
+# JARVIS XR — DOCKER COMPOSE COMPLETO (COSMOS CLOUD SERVAPP & HOMELAB)
+# Imagens oficiais compiladas automaticamente via GitHub Actions (GHCR)
 # ==============================================================================
 
 version: '3.8'
 
 services:
+  # ----------------------------------------------------------------------------
+  # 1. BACKEND (FastAPI - Python 3.12, Sem IA/LLM, 100% Determinístico)
+  # ----------------------------------------------------------------------------
   jarvis-backend:
     image: ghcr.io/goldbull3t/jarvis-backend:latest
     container_name: jarvis-backend
     restart: unless-stopped
     environment:
+      # --- Configuração Geral ---
       - JARVIS_ENV=production
       - JARVIS_LOG_LEVEL=INFO
-      # Autenticação: Defina 'false' para acesso direto na sua rede local privada (sem pedir token)
-      # Ou defina 'true' e preencha uma JARVIS_API_KEY à sua escolha
+      
+      # Autenticação Bearer:
+      # - 'false' para rede local privada (não pede token no Quest 3S)
+      # - 'true' para exigir a chave definida em JARVIS_API_KEY
       - JARVIS_AUTH_ENABLED=false
-      - JARVIS_API_KEY=
-      # Domínio próprio personalizado (opcional - deixe vazio para deteção dinâmica pelo Cosmos Cloud)
+      - JARVIS_API_KEY=wcSyhFb3mGYv0QbFkMippRFOgoBaxraNIHRkDQqiK0M
+
+      # Domínio e CORS (flexível para deteção dinâmica no Cosmos Cloud):
       - JARVIS_DOMAIN=
       - JARVIS_CORS_ORIGINS=*
 
-      # Integração Proxmox VE
+      # --- Integração Proxmox VE ---
       - PROXMOX_ENABLED=true
-      - PROXMOX_URL=https://192.168.1.100:8006
-      - PROXMOX_TOKEN_ID=jarvis-monitoring@pve!jarvis-token
-      - PROXMOX_TOKEN_SECRET=00000000-0000-0000-0000-000000000000
+      - PROXMOX_URL=https://192.168.30.123:8006
+      - PROXMOX_TOKEN_ID=jarvis-monitoring@pve@pam!jarvis-token
+      - PROXMOX_TOKEN_SECRET=1f4551ad-10f6-4647-8902-c265c96a3b78
       - PROXMOX_VERIFY_SSL=false
       - PROXMOX_TIMEOUT_SECONDS=10
-      - PROXMOX_ALLOWED_VMIDS=101,102
+      # IDs de VMs/LXCs autorizados a receber ações de ligar/desligar/reiniciar (separados por vírgula):
+      - PROXMOX_ALLOWED_VMIDS=100,101,102
 
-      # Integração Home Assistant
+      # --- Integração Home Assistant ---
       - HOME_ASSISTANT_ENABLED=true
-      - HOME_ASSISTANT_URL=https://ha.bernaslab.top
+      - HOME_ASSISTANT_URL=http://192.168.30.180
       # URL de contingência opcional (comuta automaticamente se o domínio primário falhar):
-      - HOME_ASSISTANT_FALLBACK_URL=http://192.168.30.237:8123
-      - HOME_ASSISTANT_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      - HOME_ASSISTANT_FALLBACK_URL=http://192.168.30.180
+      - HOME_ASSISTANT_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI4MWIzYThiNWRjMWY0ZGVhYjdiYjM4MWExM2ZlNWEzMCIsImlhdCI6MTc5MzI3NjQxMCwiZXhwIjoyMTA4NjM2NDEwfQ.56segglsTenkqwtIFQEPDkokrKmhTBwTmWAo-3tO62Q
       - HOME_ASSISTANT_TIMEOUT_SECONDS=5
       - HOME_ASSISTANT_VERIFY_SSL=false
+      
+      # Modo de descoberta: "labels" (etiqueta), "areas" (divisão/área), ou "allowlist" (manual)
       - HOME_ASSISTANT_DISCOVERY_MODE=labels
       - HOME_ASSISTANT_DISCOVERY_LABEL=jarvis
-      # Descoberta por divisão/área opcional:
+      # Áreas opcionais a incluir (separadas por vírgula):
       - HOME_ASSISTANT_DISCOVERY_AREAS=
+      # Entidade no HA a atualizar quando o headset entra em modo imersivo VR/AR:
       - HOME_ASSISTANT_PRESENCE_ENTITY=input_boolean.jarvis_xr_active
+      # Fallback manual de entidades caso não utilize etiquetas:
       - HOME_ASSISTANT_ALLOWED_ENTITIES=light.escritorio,switch.tomada_servidor
 
-      # Integração DNS Shield (opções: "pihole", "adguard", ou "none")
+      # --- Integração DNS Shield (Opções: "pihole", "adguard", ou "none") ---
       - DNS_PROVIDER=none
-      - PIHOLE_URL=http://192.168.1.120:80
+      - PIHOLE_URL=http://192.168.30.2:80
       - PIHOLE_API_TOKEN=
-      - ADGUARD_URL=http://192.168.1.120:3000
+      - ADGUARD_URL=http://192.168.30.2:3000
       - ADGUARD_USERNAME=admin
       - ADGUARD_PASSWORD=
 
-      # Allowlist de Serviços do Homelab
-      - HOMELAB_SERVICES=[{"name":"Proxmox VE","url":"https://192.168.30.123:8006"},{"name":"Home Assistant","url":"https://ha.bernaslab.top"}]
-    # Resolução DNS e mapeamento de hosts para domínios locais do Homelab
+      # --- Allowlist Opcional de Serviços HTTP a Monitorizar ---
+      # Se deixar "[]", o backend auto-deteta e monitoriza o Proxmox e o Home Assistant reais
+      - HOMELAB_SERVICES=[]
+    
+    # Resolução DNS e mapeamento de hosts locais do Homelab
     dns:
       - 192.168.10.1
       - 1.1.1.1
     extra_hosts:
-      - "ha.bernaslab.top:192.168.30.237"
+      - "ha.bernaslab.top:192.168.30.180"
     networks:
-      - cosmos-network
+      - cosmos-jarvis-net
 
+  # ----------------------------------------------------------------------------
+  # 2. FRONTEND (Three.js WebXR + Hand Tracking + Passthrough AR - Nginx)
+  # ----------------------------------------------------------------------------
   jarvis-frontend:
     image: ghcr.io/goldbull3t/jarvis-frontend:latest
     container_name: jarvis-frontend
@@ -71,10 +88,8 @@ services:
     depends_on:
       - jarvis-backend
     networks:
-      - cosmos-network
+      - cosmos-jarvis-net
 
 networks:
-  cosmos-network:
-    external: true
-    name: cosmos-network
-
+  cosmos-jarvis-net:
+    driver: bridge
