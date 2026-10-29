@@ -369,6 +369,8 @@ class HomeAssistantAdapter(BaseAdapter):
             status="operational",
             discovery_mode=settings.HOME_ASSISTANT_DISCOVERY_MODE,
             active_url_used=self.active_url,
+            primary_url=self.primary_url,
+            fallback_url=self.fallback_url,
             temperature_celsius=temp_val,
             humidity_percent=hum_val,
             power_consumption_watts=power_val,

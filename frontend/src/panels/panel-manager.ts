@@ -269,13 +269,25 @@ export class SpatialPanelManager3D {
 
     // Botões de Ação na base do painel
     if (panel.id === 'home') {
+      const openHaBtn: PanelButtonArea = {
+        id: 'btn-open-ha',
+        x: 14,
+        y: 280,
+        width: 140,
+        height: 42,
+        label: '🖥️ DASHBOARD HA',
+        action: 'open_ha_native'
+      };
+      panel.buttons.push(openHaBtn);
+      this.drawButton(ctx, openHaBtn, highlightButtonId === openHaBtn.id);
+
       const toggleLightBtn: PanelButtonArea = {
         id: 'btn-toggle-light',
-        x: 18,
+        x: 160,
         y: 280,
-        width: 155,
+        width: 105,
         height: 42,
-        label: '💡 LUZ ESCRITÓRIO',
+        label: '💡 LUZES',
         action: 'toggle_light',
         data: { entity_id: 'light.escritorio' }
       };
@@ -284,9 +296,9 @@ export class SpatialPanelManager3D {
 
       const camBtn: PanelButtonArea = {
         id: 'btn-view-camera',
-        x: 183,
+        x: 271,
         y: 280,
-        width: 140,
+        width: 105,
         height: 42,
         label: '📷 CÂMARA',
         action: 'open_panel_camera'
@@ -296,9 +308,9 @@ export class SpatialPanelManager3D {
 
       const refreshBtn: PanelButtonArea = {
         id: 'btn-refresh',
-        x: 333,
+        x: 382,
         y: 280,
-        width: 160,
+        width: 115,
         height: 42,
         label: '⟳ ATUALIZAR',
         action: 'refresh_data'

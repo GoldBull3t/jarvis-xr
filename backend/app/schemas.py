@@ -83,6 +83,8 @@ class HomeSummaryData(BaseModel):
     status: str  # "operational", "disabled", "unreachable"
     discovery_mode: str = "all"
     active_url_used: Optional[str] = None
+    primary_url: Optional[str] = None
+    fallback_url: Optional[str] = None
     temperature_celsius: Optional[float] = None
     humidity_percent: Optional[float] = None
     power_consumption_watts: Optional[float] = None

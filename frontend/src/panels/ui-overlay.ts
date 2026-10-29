@@ -22,8 +22,10 @@ export class UiOverlayManager {
   private systemIndicator: HTMLElement;
 
   private currentTab: string = 'home';
+  private homeViewMode: 'native' | 'tactical' = 'native';
   private homeActiveFilter: string = 'all';
   private homeSearchQuery: string = '';
+  private selectedHaUrl: string = '';
   private demoData: DemoStatusData | null = null;
   private homeData: HomeSummaryData | null = null;
   private pveData: ProxmoxSummaryData | null = null;
@@ -120,6 +122,13 @@ export class UiOverlayManager {
     const activeBtn = document.getElementById(`btn-tab-${tab}`);
     if (activeBtn) activeBtn.classList.add('active');
     this.render();
+  }
+
+  public setHomeViewMode(mode: 'native' | 'tactical') {
+    this.homeViewMode = mode;
+    if (this.currentTab === 'home') {
+      this.render();
+    }
   }
 
   public setConnectionState(status: 'online' | 'offline' | 'error') {
@@ -226,6 +235,24 @@ export class UiOverlayManager {
       return;
     }
 
+    // Determina o URL ativo para carregar o Dashboard do Home Assistant
+    const isHttps = window.location.protocol === 'https:';
+    let haUrl = this.selectedHaUrl;
+    if (!haUrl) {
+      if (isHttps && this.homeData?.fallback_url && this.homeData.fallback_url.startsWith('https://')) {
+        haUrl = this.homeData.fallback_url;
+      } else if (this.homeData?.active_url_used) {
+        haUrl = this.homeData.active_url_used;
+      } else if (this.homeData?.primary_url) {
+        haUrl = this.homeData.primary_url;
+      } else {
+        haUrl = 'https://ha.bernaslab.top';
+      }
+    }
+
+    // Se estiver no modo nativo, expande o cartão para widescreen
+    const isWide = this.homeViewMode === 'native';
+
     const temp = isReal ? (this.homeData!.temperature_celsius ?? 'N/D') : (this.demoData?.home?.temperature_celsius ?? 'N/D');
     const hum = isReal ? (this.homeData!.humidity_percent ?? 'N/D') : (this.demoData?.home?.humidity_percent ?? 'N/D');
     const powerW = isReal ? this.homeData!.power_consumption_watts : null;
@@ -239,29 +266,21 @@ export class UiOverlayManager {
     const camerasCount = isReal ? (this.homeData!.cameras_count ?? 0) : 0;
     const scenesCount = isReal ? (this.homeData!.scenes_count ?? 0) : 0;
     const climatesCount = isReal ? (this.homeData!.climates_count ?? 0) : 0;
-    const activeUrl = isReal && this.homeData!.active_url_used ? this.homeData!.active_url_used : '';
     const rawEntities = isReal ? (this.homeData!.authorized_entities || []) : [];
-
-    // Contagem de sensores normais
     const sensorsCount = rawEntities.filter(e => e.domain === 'sensor').length;
 
-    // Lista de Áreas únicas
     const areasList = isReal && this.homeData!.areas && this.homeData!.areas.length > 0
       ? this.homeData!.areas
       : Array.from(new Set(rawEntities.map(e => e.area_name).filter(Boolean))) as string[];
 
-    // Filtragem de entidades por pesquisa e por categoria
     const query = this.homeSearchQuery.toLowerCase().trim();
     const filteredEntities = rawEntities.filter(ent => {
-      // Filtro de Texto
       if (query) {
         const matchName = ent.friendly_name.toLowerCase().includes(query);
         const matchId = ent.entity_id.toLowerCase().includes(query);
         const matchArea = (ent.area_name || '').toLowerCase().includes(query);
         if (!matchName && !matchId && !matchArea) return false;
       }
-
-      // Filtro de Categoria
       if (this.homeActiveFilter === 'all' || this.homeActiveFilter === 'areas') {
         return true;
       }
@@ -289,80 +308,182 @@ export class UiOverlayManager {
     ];
 
     this.mainPanel.innerHTML = `
-      <div class="panel-card">
-        <div class="panel-title">
+      <div class="panel-card ${isWide ? 'panel-wide' : ''}">
+        <!-- Cabeçalho Principal -->
+        <div class="panel-title" style="margin-bottom: 10px;">
           <span>DOMÓTICA // HOME ASSISTANT TOTAL</span>
           <span class="badge-demo" style="${isReal ? 'color: var(--color-success); border-color: var(--color-success); background: rgba(0, 255, 157, 0.1);' : ''}">
             ${isReal ? 'INTEGRAÇÃO TOTAL REAL' : 'DEMO'}
           </span>
         </div>
 
-        ${activeUrl ? `
-        <div style="font-size: 0.7rem; color: var(--color-text-dim); margin-bottom: 8px;">
-          Ligado via: <span style="color: var(--color-primary-cyan);">${activeUrl}</span>
-        </div>` : ''}
+        <!-- Seletor de Modo Dual & Ações de Conexão -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; gap: 6px;">
+            <button 
+              class="action-btn" 
+              id="btn-ha-view-native" 
+              style="padding: 6px 14px; font-size: 0.75rem; font-weight: bold; cursor: pointer; border-radius: 4px; ${this.homeViewMode === 'native' ? 'background: rgba(0, 229, 255, 0.3); border-color: var(--color-primary-cyan); color: #fff; box-shadow: 0 0 10px rgba(0,229,255,0.4);' : 'background: rgba(5,11,20,0.6); color: var(--color-text-dim);'}"
+            >
+              🖥️ DASHBOARD & DEFINIÇÕES HA
+            </button>
+            <button 
+              class="action-btn" 
+              id="btn-ha-view-tactical" 
+              style="padding: 6px 14px; font-size: 0.75rem; font-weight: bold; cursor: pointer; border-radius: 4px; ${this.homeViewMode === 'tactical' ? 'background: rgba(0, 229, 255, 0.3); border-color: var(--color-primary-cyan); color: #fff; box-shadow: 0 0 10px rgba(0,229,255,0.4);' : 'background: rgba(5,11,20,0.6); color: var(--color-text-dim);'}"
+            >
+              🌌 HUD HOLOGRÁFICO TÁTICO
+            </button>
+          </div>
 
-        <!-- Resumo Rápido Holográfico de Topo -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px; background: rgba(0, 229, 255, 0.05); padding: 8px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15);">
-          <div>
-            <div style="font-size: 0.65rem; color: var(--color-text-dim);">TEMPERATURA</div>
-            <div style="font-weight: bold; color: var(--color-primary-cyan); font-size: 0.9rem;">${temp} °C</div>
-          </div>
-          <div>
-            <div style="font-size: 0.65rem; color: var(--color-text-dim);">HUMIDADE</div>
-            <div style="font-weight: bold; color: #fff; font-size: 0.9rem;">${hum} %</div>
-          </div>
-          ${(powerW !== null && powerW !== undefined) ? `
-          <div>
-            <div style="font-size: 0.65rem; color: var(--color-text-dim);">POTÊNCIA ATIVA</div>
-            <div style="font-weight: bold; color: #ffb700; font-size: 0.9rem;">${powerW.toFixed(0)} W</div>
-          </div>` : ''}
-          <div>
-            <div style="font-size: 0.65rem; color: var(--color-text-dim);">LUZES ATIVAS</div>
-            <div style="font-weight: bold; color: #00ff9d; font-size: 0.9rem;">${lightsOn} / ${totalLights}</div>
-          </div>
-          <div>
-            <div style="font-size: 0.65rem; color: var(--color-text-dim);">SEGURANÇA</div>
-            <div style="font-weight: bold; font-size: 0.85rem; color: ${binaryAlerts > 0 ? '#ff3366' : '#00ff9d'};">
-              ${binaryAlerts > 0 ? `⚠️ ${binaryAlerts} ALERTA(S)` : '🟢 SEGURA'}
-            </div>
-          </div>
-        </div>
-
-        <!-- Barra de Pesquisa e Filtros de Categoria -->
-        <div style="margin-bottom: 10px;">
-          <input 
-            type="text" 
-            id="ha-search-input" 
-            placeholder="🔍 Filtrar dispositivos, divisões ou tipos..." 
-            value="${this.homeSearchQuery}"
-            style="width: 100%; box-sizing: border-box; background: rgba(5, 11, 20, 0.8); border: 1px solid rgba(0, 229, 255, 0.3); color: #fff; padding: 6px 10px; border-radius: 4px; font-size: 0.75rem; font-family: monospace; margin-bottom: 8px;"
-          />
-          <div style="display: flex; flex-wrap: wrap; gap: 4px; max-height: 80px; overflow-y: auto;">
-            ${categories.map(cat => `
-              <button 
-                class="ha-filter-pill ${this.homeActiveFilter === cat.id ? 'active' : ''}" 
-                data-filter="${cat.id}"
-                style="padding: 3px 8px; font-size: 0.68rem; font-family: monospace; border-radius: 12px; border: 1px solid ${this.homeActiveFilter === cat.id ? 'var(--color-primary-cyan)' : 'rgba(255,255,255,0.2)'}; background: ${this.homeActiveFilter === cat.id ? 'rgba(0, 229, 255, 0.25)' : 'rgba(0,0,0,0.3)'}; color: ${this.homeActiveFilter === cat.id ? '#fff' : 'var(--color-text-dim)'}; cursor: pointer;"
-              >
-                ${cat.label}
+          <div style="display: flex; gap: 6px; align-items: center;">
+            ${(this.homeData?.fallback_url && this.homeData?.primary_url && this.homeData.fallback_url !== this.homeData.primary_url) ? `
+              <button class="action-btn" id="btn-ha-switch-url" style="padding: 5px 9px; font-size: 0.68rem;" title="Alternar entre endereço local e externo">
+                🌐 ${haUrl.startsWith('https') ? 'HTTPS (Domínio)' : 'IP Local (:8123)'}
               </button>
-            `).join('')}
+            ` : ''}
+            <button class="action-btn" id="btn-ha-refresh-frame" style="padding: 5px 9px; font-size: 0.68rem;" title="Recarregar">
+              ⟳ RECARREGAR
+            </button>
+            <button class="action-btn" id="btn-ha-open-new-window" style="padding: 5px 9px; font-size: 0.68rem;" title="Abrir em Nova Janela">
+              ↗ ABRIR NAVEGADOR
+            </button>
           </div>
         </div>
 
-        <!-- Lista de Dispositivos Filtrados ou Agrupados por Divisão -->
-        <div id="ha-entities-container" style="max-height: 480px; overflow-y: auto; padding-right: 4px;">
-          ${filteredEntities.length === 0 ? `
-            <div style="text-align: center; padding: 24px; color: var(--color-text-dim); font-size: 0.8rem;">
-              Nenhum dispositivo encontrado com os filtros atuais.
+        ${this.homeViewMode === 'native' ? `
+          <!-- MODO 1: WEBVIEW NATIVO COMPLETO DO HOME ASSISTANT -->
+          <div style="position: relative; width: 100%; height: 75vh; min-height: 580px; border-radius: 6px; overflow: hidden; border: 1px solid rgba(0, 229, 255, 0.4); background: #0c1017; box-shadow: 0 0 25px rgba(0, 229, 255, 0.15);">
+            <iframe
+              id="ha-native-iframe"
+              src="${haUrl}"
+              style="width: 100%; height: 100%; border: none; display: block;"
+              allow="fullscreen; autoplay; camera; microphone; geolocation"
+            ></iframe>
+          </div>
+
+          <div style="margin-top: 8px; padding: 8px 12px; background: rgba(0, 229, 255, 0.05); border: 1px dashed rgba(0, 229, 255, 0.25); border-radius: 4px; font-size: 0.72rem; color: var(--color-text-dim); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <strong>Conexão:</strong> <span style="color: var(--color-primary-cyan); font-family: monospace;">${haUrl}</span>
             </div>
-          ` : this.renderEntitiesList(filteredEntities, this.homeActiveFilter === 'areas')}
-        </div>
+            <div style="font-size: 0.68rem;">
+              💡 Dica: Se o quadro aparecer bloqueado, certifique-se de ter <code>http: use_x_frame_options: false</code> no seu <code>configuration.yaml</code> do Home Assistant.
+            </div>
+          </div>
+        ` : `
+          <!-- MODO 2: HUD HOLOGRÁFICO TÁTICO COM CARTÕES LOVELACE MUSHROOM -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px; background: rgba(0, 229, 255, 0.05); padding: 8px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15);">
+            <div>
+              <div style="font-size: 0.65rem; color: var(--color-text-dim);">TEMPERATURA</div>
+              <div style="font-weight: bold; color: var(--color-primary-cyan); font-size: 0.9rem;">${temp} °C</div>
+            </div>
+            <div>
+              <div style="font-size: 0.65rem; color: var(--color-text-dim);">HUMIDADE</div>
+              <div style="font-weight: bold; color: #fff; font-size: 0.9rem;">${hum} %</div>
+            </div>
+            ${(powerW !== null && powerW !== undefined) ? `
+            <div>
+              <div style="font-size: 0.65rem; color: var(--color-text-dim);">POTÊNCIA ATIVA</div>
+              <div style="font-weight: bold; color: #ffb700; font-size: 0.9rem;">${powerW.toFixed(0)} W</div>
+            </div>` : ''}
+            <div>
+              <div style="font-size: 0.65rem; color: var(--color-text-dim);">LUZES ATIVAS</div>
+              <div style="font-weight: bold; color: #00ff9d; font-size: 0.9rem;">${lightsOn} / ${totalLights}</div>
+            </div>
+            <div>
+              <div style="font-size: 0.65rem; color: var(--color-text-dim);">SEGURANÇA</div>
+              <div style="font-weight: bold; font-size: 0.85rem; color: ${binaryAlerts > 0 ? '#ff3366' : '#00ff9d'};">
+                ${binaryAlerts > 0 ? `⚠️ ${binaryAlerts} ALERTA(S)` : '🟢 SEGURA'}
+              </div>
+            </div>
+          </div>
+
+          <!-- Barra de Pesquisa e Filtros de Categoria -->
+          <div style="margin-bottom: 10px;">
+            <input 
+              type="text" 
+              id="ha-search-input" 
+              placeholder="🔍 Filtrar dispositivos, divisões ou tipos..." 
+              value="${this.homeSearchQuery}"
+              style="width: 100%; box-sizing: border-box; background: rgba(5, 11, 20, 0.8); border: 1px solid rgba(0, 229, 255, 0.3); color: #fff; padding: 6px 10px; border-radius: 4px; font-size: 0.75rem; font-family: monospace; margin-bottom: 8px;"
+            />
+            <div style="display: flex; flex-wrap: wrap; gap: 4px; max-height: 80px; overflow-y: auto;">
+              ${categories.map(cat => `
+                <button 
+                  class="ha-filter-pill ${this.homeActiveFilter === cat.id ? 'active' : ''}" 
+                  data-filter="${cat.id}"
+                  style="padding: 3px 8px; font-size: 0.68rem; font-family: monospace; border-radius: 12px; border: 1px solid ${this.homeActiveFilter === cat.id ? 'var(--color-primary-cyan)' : 'rgba(255,255,255,0.2)'}; background: ${this.homeActiveFilter === cat.id ? 'rgba(0, 229, 255, 0.25)' : 'rgba(0,0,0,0.3)'}; color: ${this.homeActiveFilter === cat.id ? '#fff' : 'var(--color-text-dim)'}; cursor: pointer;"
+                >
+                  ${cat.label}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Grelha de Dispositivos Holográficos -->
+          <div id="ha-entities-container" style="max-height: 520px; overflow-y: auto; padding-right: 4px;">
+            ${filteredEntities.length === 0 ? `
+              <div style="text-align: center; padding: 24px; color: var(--color-text-dim); font-size: 0.8rem;">
+                Nenhum dispositivo encontrado com os filtros atuais.
+              </div>
+            ` : this.renderEntitiesList(filteredEntities, this.homeActiveFilter === 'areas')}
+          </div>
+        `}
       </div>
     `;
 
-    // Interatividade da Pesquisa em Tempo Real
+    // Interatividade da Alternância de Modos (Nativo vs Tático)
+    const btnNative = document.getElementById('btn-ha-view-native');
+    const btnTactical = document.getElementById('btn-ha-view-tactical');
+    if (btnNative) {
+      btnNative.addEventListener('click', () => {
+        soundFX.playClick();
+        this.homeViewMode = 'native';
+        this.renderHome();
+      });
+    }
+    if (btnTactical) {
+      btnTactical.addEventListener('click', () => {
+        soundFX.playClick();
+        this.homeViewMode = 'tactical';
+        this.renderHome();
+      });
+    }
+
+    // Interatividade de Ações de Topo (Recarregar, Alternar URL, Nova Janela)
+    const btnReload = document.getElementById('btn-ha-refresh-frame');
+    if (btnReload) {
+      btnReload.addEventListener('click', () => {
+        soundFX.playClick();
+        const iframe = document.getElementById('ha-native-iframe') as HTMLIFrameElement | null;
+        if (iframe) {
+          iframe.src = iframe.src;
+        } else {
+          window.dispatchEvent(new CustomEvent('jarvis-reload-data'));
+        }
+      });
+    }
+
+    const btnOpenWindow = document.getElementById('btn-ha-open-new-window');
+    if (btnOpenWindow) {
+      btnOpenWindow.addEventListener('click', () => {
+        soundFX.playClick();
+        window.open(haUrl, '_blank');
+      });
+    }
+
+    const btnSwitchUrl = document.getElementById('btn-ha-switch-url');
+    if (btnSwitchUrl) {
+      btnSwitchUrl.addEventListener('click', () => {
+        soundFX.playClick();
+        if (this.homeData?.primary_url && this.homeData?.fallback_url) {
+          this.selectedHaUrl = (haUrl === this.homeData.primary_url) ? this.homeData.fallback_url : this.homeData.primary_url;
+        }
+        this.renderHome();
+      });
+    }
+
+    // Interatividade da Pesquisa em Tempo Real (modo tático)
     const searchInput = document.getElementById('ha-search-input') as HTMLInputElement | null;
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
@@ -376,7 +497,7 @@ export class UiOverlayManager {
       });
     }
 
-    // Interatividade dos Botões de Filtro
+    // Interatividade dos Botões de Filtro (modo tático)
     this.mainPanel.querySelectorAll('.ha-filter-pill').forEach(pill => {
       pill.addEventListener('click', (e) => {
         const target = e.currentTarget as HTMLElement;
@@ -385,7 +506,7 @@ export class UiOverlayManager {
       });
     });
 
-    // Interatividade das Ações de Dispositivos (Luzes, Tomadas, Clima, Estores, Cenas, etc.)
+    // Interatividade das Ações de Dispositivos nos Cartões
     this.mainPanel.querySelectorAll('.action-ha-btn').forEach(btn => {
       btn.addEventListener('click', (ev) => {
         const target = ev.currentTarget as HTMLButtonElement;
@@ -403,7 +524,7 @@ export class UiOverlayManager {
   }
 
   /**
-   * Renderiza a listagem de entidades organizadas individualmente ou por divisão
+   * Renderiza a grelha de entidades em estilo Mushroom / Tile Cards Glassmorphism
    */
   private renderEntitiesList(entities: EntityState[], groupByArea: boolean): string {
     if (groupByArea) {
@@ -415,43 +536,55 @@ export class UiOverlayManager {
       });
 
       return Array.from(areaGroups.entries()).map(([areaName, areaEntities]) => `
-        <div style="margin-bottom: 14px; background: rgba(0, 25, 45, 0.4); border: 1px solid rgba(0, 229, 255, 0.2); border-radius: 4px; padding: 8px;">
-          <div style="font-weight: bold; color: var(--color-primary-cyan); font-size: 0.78rem; border-bottom: 1px dashed rgba(0, 229, 255, 0.25); padding-bottom: 4px; margin-bottom: 6px; display: flex; justify-content: space-between;">
+        <div style="margin-bottom: 16px; background: rgba(0, 15, 30, 0.4); border: 1px solid rgba(0, 229, 255, 0.2); border-radius: 8px; padding: 10px;">
+          <div style="font-weight: bold; color: var(--color-primary-cyan); font-size: 0.8rem; border-bottom: 1px dashed rgba(0, 229, 255, 0.25); padding-bottom: 6px; margin-bottom: 10px; display: flex; justify-content: space-between;">
             <span>📍 ${areaName.toUpperCase()}</span>
             <span style="font-size: 0.7rem; color: var(--color-text-dim);">${areaEntities.length} dispositivo(s)</span>
           </div>
-          ${areaEntities.map(ent => this.renderEntityRow(ent)).join('')}
+          <div class="ha-tile-grid">
+            ${areaEntities.map(ent => this.renderEntityTile(ent)).join('')}
+          </div>
         </div>
       `).join('');
     }
 
-    return entities.map(ent => this.renderEntityRow(ent)).join('');
+    return `
+      <div class="ha-tile-grid">
+        ${entities.map(ent => this.renderEntityTile(ent)).join('')}
+      </div>
+    `;
   }
 
   /**
-   * Renderiza uma linha individual de dispositivo com controlos táteis avançados
+   * Renderiza um cartão tático moderno estilo Lovelace Mushroom Tile
    */
-  private renderEntityRow(e: EntityState): string {
+  private renderEntityTile(e: EntityState): string {
     const domain = e.domain;
     const isStateOn = e.state === 'on' || e.state === 'open' || e.state === 'playing' || e.state === 'active';
-    const areaTag = e.area_name ? `<span style="font-size: 0.65rem; color: var(--color-primary-cyan); margin-left: 6px;">[${e.area_name}]</span>` : '';
+    const areaTag = e.area_name ? `<span style="font-size: 0.65rem; color: var(--color-primary-cyan);">📍 ${e.area_name}</span>` : '';
 
     // 1. ILUMINAÇÃO (Light)
     if (domain === 'light') {
       return `
-        <div class="data-row" style="padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
-          <div>
-            <div style="font-weight: 600; color: #fff; font-size: 0.8rem;">💡 ${e.friendly_name} ${areaTag}</div>
-            <div style="font-size: 0.65rem; color: var(--color-text-dim);">${e.entity_id} • ${e.state.toUpperCase()}</div>
+        <div class="ha-tile-card ${isStateOn ? 'active' : ''}">
+          <div style="display: flex; align-items: center; margin-bottom: 8px;">
+            <div class="ha-tile-avatar ${isStateOn ? 'on' : ''}">💡</div>
+            <div style="overflow: hidden; flex: 1;">
+              <div style="font-weight: 700; color: #fff; font-size: 0.82rem; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${e.friendly_name}</div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
+                <span style="font-size: 0.68rem; color: ${isStateOn ? '#ffb700' : 'var(--color-text-dim)'}; font-weight: bold;">${e.state.toUpperCase()}</span>
+                ${areaTag}
+              </div>
+            </div>
           </div>
-          <div style="display: flex; gap: 4px; align-items: center;">
-            <button class="entity-btn action-ha-btn" data-entity-id="${e.entity_id}" data-domain="light" data-action="toggle" style="${isStateOn ? 'background: rgba(0, 255, 157, 0.25); color: #00ff9d; border-color: #00ff9d;' : ''}">
-              ${isStateOn ? 'LIGADA' : 'DESLIGADA'}
+          <div style="display: flex; gap: 4px;">
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="light" data-action="toggle" style="flex: 1; padding: 6px; font-size: 0.7rem; font-weight: bold; background: ${isStateOn ? 'rgba(255, 183, 0, 0.25)' : 'rgba(0,0,0,0.4)'}; border: 1px solid ${isStateOn ? '#ffb700' : 'rgba(255,255,255,0.2)'}; color: ${isStateOn ? '#ffb700' : '#fff'}; border-radius: 4px; cursor: pointer;">
+              ${isStateOn ? 'DESLIGAR' : 'LIGAR'}
             </button>
-            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="light" data-action="on" data-payload='{"brightness": 128}' style="padding: 4px 6px; font-size: 0.65rem; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 3px; cursor: pointer;">
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="light" data-action="on" data-payload='{"brightness": 128}' style="padding: 6px 8px; font-size: 0.68rem; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; cursor: pointer;">
               50%
             </button>
-            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="light" data-action="on" data-payload='{"brightness": 255}' style="padding: 4px 6px; font-size: 0.65rem; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 3px; cursor: pointer;">
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="light" data-action="on" data-payload='{"brightness": 255}' style="padding: 6px 8px; font-size: 0.68rem; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; cursor: pointer;">
               100%
             </button>
           </div>
@@ -462,13 +595,19 @@ export class UiOverlayManager {
     // 2. TOMADAS / INTERRUPTORES (Switch / Plug)
     if (domain === 'switch' || domain === 'input_boolean') {
       return `
-        <div class="data-row" style="padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
-          <div>
-            <div style="font-weight: 600; color: #fff; font-size: 0.8rem;">🔌 ${e.friendly_name} ${areaTag}</div>
-            <div style="font-size: 0.65rem; color: var(--color-text-dim);">${e.entity_id}</div>
+        <div class="ha-tile-card ${isStateOn ? 'active' : ''}">
+          <div style="display: flex; align-items: center; margin-bottom: 8px;">
+            <div class="ha-tile-avatar ${isStateOn ? 'on' : ''}">🔌</div>
+            <div style="overflow: hidden; flex: 1;">
+              <div style="font-weight: 700; color: #fff; font-size: 0.82rem; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${e.friendly_name}</div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
+                <span style="font-size: 0.68rem; color: ${isStateOn ? '#00ff9d' : 'var(--color-text-dim)'}; font-weight: bold;">${e.state.toUpperCase()}</span>
+                ${areaTag}
+              </div>
+            </div>
           </div>
-          <button class="entity-btn action-ha-btn" data-entity-id="${e.entity_id}" data-domain="switch" data-action="toggle" style="${isStateOn ? 'background: rgba(0, 255, 157, 0.25); color: #00ff9d; border-color: #00ff9d;' : ''}">
-            ${isStateOn ? 'LIGADO' : 'DESLIGADO'}
+          <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="switch" data-action="toggle" style="width: 100%; padding: 6px; font-size: 0.72rem; font-weight: bold; background: ${isStateOn ? 'rgba(0, 255, 157, 0.25)' : 'rgba(0,0,0,0.4)'}; border: 1px solid ${isStateOn ? '#00ff9d' : 'rgba(255,255,255,0.2)'}; color: ${isStateOn ? '#00ff9d' : '#fff'}; border-radius: 4px; cursor: pointer;">
+            ${isStateOn ? 'DESLIGAR TOMADA' : 'LIGAR TOMADA'}
           </button>
         </div>
       `;
@@ -479,29 +618,32 @@ export class UiOverlayManager {
       const targetTemp = e.attributes.temperature ?? 'N/D';
       const currentTemp = e.attributes.current_temperature ?? 'N/D';
       return `
-        <div class="data-row" style="padding: 8px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); flex-direction: column; align-items: flex-start;">
-          <div style="display: flex; justify-content: space-between; width: 100%; margin-bottom: 6px;">
-            <div>
-              <div style="font-weight: 600; color: #fff; font-size: 0.8rem;">❄️ ${e.friendly_name} ${areaTag}</div>
-              <div style="font-size: 0.65rem; color: var(--color-text-dim);">Atual: <strong style="color:#00e5ff;">${currentTemp}°C</strong> | Alvo: <strong style="color:#ffb700;">${targetTemp}°C</strong> (${e.state.toUpperCase()})</div>
-            </div>
-            <div style="display: flex; gap: 4px;">
-              <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="climate" data-action="set_temperature" data-payload='{"temperature": ${Number(targetTemp || 20) - 0.5}}' style="padding: 4px 8px; font-size: 0.7rem; background: rgba(0, 229, 255, 0.2); border: 1px solid var(--color-primary-cyan); color: #fff; border-radius: 3px; cursor: pointer;">
-                -0.5°
-              </button>
-              <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="climate" data-action="set_temperature" data-payload='{"temperature": ${Number(targetTemp || 20) + 0.5}}' style="padding: 4px 8px; font-size: 0.7rem; background: rgba(0, 229, 255, 0.2); border: 1px solid var(--color-primary-cyan); color: #fff; border-radius: 3px; cursor: pointer;">
-                +0.5°
-              </button>
+        <div class="ha-tile-card active" style="grid-column: span 1;">
+          <div style="display: flex; align-items: center; margin-bottom: 6px;">
+            <div class="ha-tile-avatar on">❄️</div>
+            <div style="overflow: hidden; flex: 1;">
+              <div style="font-weight: 700; color: #fff; font-size: 0.82rem;">${e.friendly_name}</div>
+              <div style="font-size: 0.68rem; color: var(--color-primary-cyan);">
+                Atual: <strong>${currentTemp}°C</strong> | Alvo: <strong style="color: #ffb700;">${targetTemp}°C</strong>
+              </div>
             </div>
           </div>
+          <div style="display: flex; gap: 4px; margin-bottom: 6px;">
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="climate" data-action="set_temperature" data-payload='{"temperature": ${Number(targetTemp || 20) - 0.5}}' style="flex: 1; padding: 4px; font-size: 0.75rem; font-weight: bold; background: rgba(0, 229, 255, 0.2); border: 1px solid var(--color-primary-cyan); color: #fff; border-radius: 3px; cursor: pointer;">
+              -0.5°C
+            </button>
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="climate" data-action="set_temperature" data-payload='{"temperature": ${Number(targetTemp || 20) + 0.5}}' style="flex: 1; padding: 4px; font-size: 0.75rem; font-weight: bold; background: rgba(0, 229, 255, 0.2); border: 1px solid var(--color-primary-cyan); color: #fff; border-radius: 3px; cursor: pointer;">
+              +0.5°C
+            </button>
+          </div>
           <div style="display: flex; gap: 4px;">
-            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="climate" data-action="set_hvac_mode" data-payload='{"hvac_mode": "heat"}' style="padding: 3px 8px; font-size: 0.65rem; background: rgba(255, 85, 0, 0.2); border: 1px solid #ff5500; color: #ffaa88; border-radius: 3px; cursor: pointer;">
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="climate" data-action="set_hvac_mode" data-payload='{"hvac_mode": "heat"}' style="flex: 1; padding: 4px; font-size: 0.65rem; background: rgba(255, 85, 0, 0.2); border: 1px solid #ff5500; color: #ffaa88; border-radius: 3px; cursor: pointer;">
               🔥 AQUECER
             </button>
-            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="climate" data-action="set_hvac_mode" data-payload='{"hvac_mode": "cool"}' style="padding: 3px 8px; font-size: 0.65rem; background: rgba(0, 229, 255, 0.2); border: 1px solid #00e5ff; color: #00e5ff; border-radius: 3px; cursor: pointer;">
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="climate" data-action="set_hvac_mode" data-payload='{"hvac_mode": "cool"}' style="flex: 1; padding: 4px; font-size: 0.65rem; background: rgba(0, 229, 255, 0.2); border: 1px solid #00e5ff; color: #00e5ff; border-radius: 3px; cursor: pointer;">
               ❄️ ARREFECER
             </button>
-            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="climate" data-action="set_hvac_mode" data-payload='{"hvac_mode": "off"}' style="padding: 3px 8px; font-size: 0.65rem; background: rgba(255, 51, 102, 0.2); border: 1px solid #ff3366; color: #ff6688; border-radius: 3px; cursor: pointer;">
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="climate" data-action="set_hvac_mode" data-payload='{"hvac_mode": "off"}' style="flex: 1; padding: 4px; font-size: 0.65rem; background: rgba(255, 51, 102, 0.2); border: 1px solid #ff3366; color: #ff6688; border-radius: 3px; cursor: pointer;">
               ⭕ OFF
             </button>
           </div>
@@ -513,19 +655,22 @@ export class UiOverlayManager {
     if (domain === 'cover') {
       const pos = e.attributes.current_position;
       return `
-        <div class="data-row" style="padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
-          <div>
-            <div style="font-weight: 600; color: #fff; font-size: 0.8rem;">🪟 ${e.friendly_name} ${areaTag}</div>
-            <div style="font-size: 0.65rem; color: var(--color-text-dim);">Estado: ${e.state.toUpperCase()} ${pos !== undefined ? `(${pos}%)` : ''}</div>
+        <div class="ha-tile-card ${isStateOn ? 'active' : ''}">
+          <div style="display: flex; align-items: center; margin-bottom: 8px;">
+            <div class="ha-tile-avatar on">🪟</div>
+            <div style="overflow: hidden; flex: 1;">
+              <div style="font-weight: 700; color: #fff; font-size: 0.82rem;">${e.friendly_name}</div>
+              <div style="font-size: 0.68rem; color: var(--color-text-dim);">Estado: ${e.state.toUpperCase()} ${pos !== undefined ? `(${pos}%)` : ''}</div>
+            </div>
           </div>
           <div style="display: flex; gap: 4px;">
-            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="cover" data-action="open" style="padding: 4px 8px; font-size: 0.68rem; background: rgba(0, 255, 157, 0.2); border: 1px solid #00ff9d; color: #fff; border-radius: 3px; cursor: pointer;">
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="cover" data-action="open" style="flex: 1; padding: 5px; font-size: 0.68rem; background: rgba(0, 255, 157, 0.2); border: 1px solid #00ff9d; color: #fff; border-radius: 4px; cursor: pointer;">
               ▲ ABRIR
             </button>
-            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="cover" data-action="stop" style="padding: 4px 8px; font-size: 0.68rem; background: rgba(255, 183, 0, 0.2); border: 1px solid #ffb700; color: #fff; border-radius: 3px; cursor: pointer;">
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="cover" data-action="stop" style="flex: 1; padding: 5px; font-size: 0.68rem; background: rgba(255, 183, 0, 0.2); border: 1px solid #ffb700; color: #fff; border-radius: 4px; cursor: pointer;">
               ■ PARAR
             </button>
-            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="cover" data-action="close" style="padding: 4px 8px; font-size: 0.68rem; background: rgba(255, 51, 102, 0.2); border: 1px solid #ff3366; color: #fff; border-radius: 3px; cursor: pointer;">
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="cover" data-action="close" style="flex: 1; padding: 5px; font-size: 0.68rem; background: rgba(255, 51, 102, 0.2); border: 1px solid #ff3366; color: #fff; border-radius: 4px; cursor: pointer;">
               ▼ FECHAR
             </button>
           </div>
@@ -533,39 +678,43 @@ export class UiOverlayManager {
       `;
     }
 
-    // 5. SENSORES BINÁRIOS / SEGURANÇA (Portas, Janelas, Movimento, Fumo, Fugas)
+    // 5. SEGURANÇA & SENSORES BINÁRIOS (Portas, Janelas, Fumo, Fuga de Água)
     if (domain === 'binary_sensor') {
       const devClass = e.device_class || e.attributes.device_class || 'sensor';
       const isAlert = e.state === 'on';
-      const badgeColor = isAlert ? '#ff3366' : '#00ff9d';
-      const badgeBg = isAlert ? 'rgba(255, 51, 102, 0.15)' : 'rgba(0, 255, 157, 0.15)';
-      const label = isAlert ? '⚠️ ABERTO / ATIVO' : '✓ FECHADO / OK';
-
       return `
-        <div class="data-row" style="padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
-          <div>
-            <div style="font-weight: 600; color: #fff; font-size: 0.8rem;">🛡️ ${e.friendly_name} ${areaTag}</div>
-            <div style="font-size: 0.65rem; color: var(--color-text-dim);">${devClass.toUpperCase()} • ${e.entity_id}</div>
+        <div class="ha-tile-card ${isAlert ? 'active' : ''}" style="${isAlert ? 'border-color: #ff3366;' : ''}">
+          <div style="display: flex; align-items: center;">
+            <div class="ha-tile-avatar ${isAlert ? 'alert' : ''}">🛡️</div>
+            <div style="overflow: hidden; flex: 1;">
+              <div style="font-weight: 700; color: #fff; font-size: 0.82rem;">${e.friendly_name}</div>
+              <div style="font-size: 0.68rem; color: var(--color-text-dim); margin-top: 2px;">${devClass.toUpperCase()}</div>
+            </div>
+            <span style="font-weight: bold; font-size: 0.72rem; color: ${isAlert ? '#ff3366' : '#00ff9d'}; padding: 4px 8px; border-radius: 4px; border: 1px solid ${isAlert ? '#ff3366' : '#00ff9d'}; background: ${isAlert ? 'rgba(255,51,102,0.15)' : 'rgba(0,255,157,0.15)'};">
+              ${isAlert ? '⚠️ ABERTO' : '✓ SEGURO'}
+            </span>
           </div>
-          <span style="padding: 3px 8px; font-size: 0.7rem; font-weight: bold; border-radius: 3px; border: 1px solid ${badgeColor}; background: ${badgeBg}; color: ${badgeColor};">
-            ${label}
-          </span>
         </div>
       `;
     }
 
-    // 6. SENSORES DE MEDIÇÃO (Temperatura, Humidade, Potência, Energia, etc.)
+    // 6. SENSORES DE TELEMETRIA (Temperatura, Humidade, Potência, etc.)
     if (domain === 'sensor') {
       const unit = e.unit_of_measurement || e.attributes.unit_of_measurement || '';
       return `
-        <div class="data-row" style="padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
-          <div>
-            <div style="font-weight: 600; color: #fff; font-size: 0.8rem;">📊 ${e.friendly_name} ${areaTag}</div>
-            <div style="font-size: 0.65rem; color: var(--color-text-dim);">${e.entity_id}</div>
+        <div class="ha-tile-card">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; overflow: hidden; flex: 1;">
+              <div class="ha-tile-avatar">📊</div>
+              <div style="overflow: hidden;">
+                <div style="font-weight: 700; color: #fff; font-size: 0.82rem; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${e.friendly_name}</div>
+                ${areaTag}
+              </div>
+            </div>
+            <span style="font-weight: bold; color: var(--color-primary-cyan); font-size: 0.92rem; font-family: monospace; white-space: nowrap; margin-left: 8px;">
+              ${e.state} ${unit}
+            </span>
           </div>
-          <span style="font-weight: bold; color: var(--color-primary-cyan); font-size: 0.85rem; font-family: monospace;">
-            ${e.state} ${unit}
-          </span>
         </div>
       `;
     }
@@ -573,14 +722,19 @@ export class UiOverlayManager {
     // 7. CENAS & SCRIPTS (Scene / Script)
     if (domain === 'scene' || domain === 'script') {
       return `
-        <div class="data-row" style="padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
-          <div>
-            <div style="font-weight: 600; color: #fff; font-size: 0.8rem;">🎬 ${e.friendly_name} ${areaTag}</div>
-            <div style="font-size: 0.65rem; color: var(--color-text-dim);">${domain.toUpperCase()} • ${e.entity_id}</div>
+        <div class="ha-tile-card">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; overflow: hidden; flex: 1;">
+              <div class="ha-tile-avatar on">🎬</div>
+              <div style="overflow: hidden;">
+                <div style="font-weight: 700; color: #fff; font-size: 0.82rem;">${e.friendly_name}</div>
+                <div style="font-size: 0.65rem; color: var(--color-text-dim);">${domain.toUpperCase()}</div>
+              </div>
+            </div>
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="${domain}" data-action="turn_on" style="padding: 6px 14px; font-size: 0.72rem; font-weight: bold; background: rgba(0, 229, 255, 0.25); border: 1px solid var(--color-primary-cyan); color: #fff; border-radius: 4px; cursor: pointer;">
+              ▶ ATIVAR
+            </button>
           </div>
-          <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="${domain}" data-action="turn_on" style="padding: 4px 12px; font-size: 0.7rem; background: rgba(0, 229, 255, 0.25); border: 1px solid var(--color-primary-cyan); color: #fff; border-radius: 3px; cursor: pointer; font-weight: bold;">
-            ▶ ATIVAR
-          </button>
         </div>
       `;
     }
@@ -589,16 +743,19 @@ export class UiOverlayManager {
     if (domain === 'media_player') {
       const mediaTitle = e.attributes.media_title || e.attributes.app_name || '';
       return `
-        <div class="data-row" style="padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
-          <div>
-            <div style="font-weight: 600; color: #fff; font-size: 0.8rem;">🎵 ${e.friendly_name} ${areaTag}</div>
-            <div style="font-size: 0.65rem; color: var(--color-text-dim);">${mediaTitle ? `A tocar: ${mediaTitle}` : e.state.toUpperCase()}</div>
+        <div class="ha-tile-card ${isStateOn ? 'active' : ''}">
+          <div style="display: flex; align-items: center; margin-bottom: 8px;">
+            <div class="ha-tile-avatar ${isStateOn ? 'on' : ''}">🎵</div>
+            <div style="overflow: hidden; flex: 1;">
+              <div style="font-weight: 700; color: #fff; font-size: 0.82rem;">${e.friendly_name}</div>
+              <div style="font-size: 0.68rem; color: var(--color-text-dim);">${mediaTitle ? `A tocar: ${mediaTitle}` : e.state.toUpperCase()}</div>
+            </div>
           </div>
           <div style="display: flex; gap: 4px;">
-            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="media_player" data-action="play_pause" style="padding: 4px 8px; font-size: 0.7rem; background: rgba(0, 229, 255, 0.2); border: 1px solid var(--color-primary-cyan); color: #fff; border-radius: 3px; cursor: pointer;">
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="media_player" data-action="play_pause" style="flex: 1; padding: 6px; font-size: 0.7rem; font-weight: bold; background: rgba(0, 229, 255, 0.2); border: 1px solid var(--color-primary-cyan); color: #fff; border-radius: 4px; cursor: pointer;">
               ${isStateOn ? '⏸ PAUSAR' : '▶ REPRODUZIR'}
             </button>
-            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="media_player" data-action="next" style="padding: 4px 8px; font-size: 0.7rem; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 3px; cursor: pointer;">
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="media_player" data-action="next" style="padding: 6px 12px; font-size: 0.7rem; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; cursor: pointer;">
               ⏭
             </button>
           </div>
@@ -606,17 +763,22 @@ export class UiOverlayManager {
       `;
     }
 
-    // 9. CÂMARAS DE VIGILÂNCIA (Camera)
+    // 9. CÂMARAS (Camera)
     if (domain === 'camera') {
       return `
-        <div class="data-row" style="padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
-          <div>
-            <div style="font-weight: 600; color: #fff; font-size: 0.8rem;">📹 ${e.friendly_name} ${areaTag}</div>
-            <div style="font-size: 0.65rem; color: var(--color-text-dim);">Transmissão / Snapshot • ${e.entity_id}</div>
+        <div class="ha-tile-card">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; overflow: hidden; flex: 1;">
+              <div class="ha-tile-avatar on">📹</div>
+              <div style="overflow: hidden;">
+                <div style="font-weight: 700; color: #fff; font-size: 0.82rem;">${e.friendly_name}</div>
+                ${areaTag}
+              </div>
+            </div>
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="camera" data-action="view_in_3d" style="padding: 6px 12px; font-size: 0.7rem; font-weight: bold; background: rgba(0, 255, 157, 0.25); border: 1px solid #00ff9d; color: #fff; border-radius: 4px; cursor: pointer;">
+              👁️ VER NO 3D
+            </button>
           </div>
-          <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="camera" data-action="view_in_3d" style="padding: 4px 10px; font-size: 0.7rem; background: rgba(0, 255, 157, 0.25); border: 1px solid #00ff9d; color: #fff; border-radius: 3px; cursor: pointer; font-weight: bold;">
-            👁️ VER NO PAINEL 3D
-          </button>
         </div>
       `;
     }
@@ -625,28 +787,38 @@ export class UiOverlayManager {
     if (domain === 'lock') {
       const isLocked = e.state === 'locked';
       return `
-        <div class="data-row" style="padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
-          <div>
-            <div style="font-weight: 600; color: #fff; font-size: 0.8rem;">🔒 ${e.friendly_name} ${areaTag}</div>
-            <div style="font-size: 0.65rem; color: var(--color-text-dim);">${isLocked ? 'TRANCADA' : 'DESTRANCADA'}</div>
+        <div class="ha-tile-card">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; overflow: hidden; flex: 1;">
+              <div class="ha-tile-avatar on">🔒</div>
+              <div style="overflow: hidden;">
+                <div style="font-weight: 700; color: #fff; font-size: 0.82rem;">${e.friendly_name}</div>
+                <div style="font-size: 0.68rem; color: var(--color-text-dim);">${isLocked ? 'TRANCADA' : 'DESTRANCADA'}</div>
+              </div>
+            </div>
+            <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="lock" data-action="${isLocked ? 'unlock' : 'lock'}" style="padding: 6px 12px; font-size: 0.7rem; font-weight: bold; background: ${isLocked ? 'rgba(0, 255, 157, 0.2)' : 'rgba(255, 51, 102, 0.2)'}; border: 1px solid ${isLocked ? '#00ff9d' : '#ff3366'}; color: #fff; border-radius: 4px; cursor: pointer;">
+              ${isLocked ? 'DESTRANCAR' : 'TRANCAR'}
+            </button>
           </div>
-          <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="lock" data-action="${isLocked ? 'unlock' : 'lock'}" style="padding: 4px 10px; font-size: 0.7rem; background: ${isLocked ? 'rgba(0, 255, 157, 0.2)' : 'rgba(255, 51, 102, 0.2)'}; border: 1px solid ${isLocked ? '#00ff9d' : '#ff3366'}; color: #fff; border-radius: 3px; cursor: pointer;">
-            ${isLocked ? 'DESTRANCAR' : 'TRANCAR'}
-          </button>
         </div>
       `;
     }
 
-    // Padrão genérico para outros domínios (ventoinha, aspirador, etc.)
+    // Cartão genérico para outros domínios
     return `
-      <div class="data-row" style="padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
-        <div>
-          <div style="font-weight: 600; color: #fff; font-size: 0.8rem;">⚙️ ${e.friendly_name} ${areaTag}</div>
-          <div style="font-size: 0.65rem; color: var(--color-text-dim);">${e.entity_id} [${domain.toUpperCase()}] • ${e.state}</div>
+      <div class="ha-tile-card">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; overflow: hidden; flex: 1;">
+            <div class="ha-tile-avatar">⚙️</div>
+            <div style="overflow: hidden;">
+              <div style="font-weight: 700; color: #fff; font-size: 0.82rem;">${e.friendly_name}</div>
+              <div style="font-size: 0.65rem; color: var(--color-text-dim);">${domain.toUpperCase()} • ${e.state}</div>
+            </div>
+          </div>
+          <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="${domain}" data-action="toggle" style="padding: 5px 10px; font-size: 0.68rem; background: rgba(0, 229, 255, 0.2); border: 1px solid var(--color-primary-cyan); color: #fff; border-radius: 4px; cursor: pointer;">
+            ACIONAR
+          </button>
         </div>
-        <button class="action-ha-btn" data-entity-id="${e.entity_id}" data-domain="${domain}" data-action="toggle" style="padding: 4px 8px; font-size: 0.7rem; background: rgba(0, 229, 255, 0.2); border: 1px solid var(--color-primary-cyan); color: #fff; border-radius: 3px; cursor: pointer;">
-          ACIONAR
-        </button>
       </div>
     `;
   }

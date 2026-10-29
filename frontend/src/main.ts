@@ -145,6 +145,10 @@ class JarvisApp {
       if (action === 'refresh_data') {
         this.speakFeedback('A atualizar métricas do homelab.');
         await this.loadInitialData();
+      } else if (action === 'open_ha_native') {
+        this.speakFeedback('A abrir dashboard interativo do Home Assistant.');
+        this.uiOverlay.switchTab('home');
+        this.uiOverlay.setHomeViewMode('native');
       } else if (action === 'toggle_light') {
         this.speakFeedback('Comando enviado para a entidade.');
         await this.toggleEntity(data?.entity_id || 'light.escritorio', 'light');

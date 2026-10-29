@@ -56,6 +56,8 @@ export interface HomeSummaryData {
   status: 'operational' | 'disabled' | 'unreachable';
   discovery_mode?: string;
   active_url_used?: string | null;
+  primary_url?: string | null;
+  fallback_url?: string | null;
   temperature_celsius?: number | null;
   humidity_percent?: number | null;
   power_consumption_watts?: number | null;
