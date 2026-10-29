@@ -17,13 +17,18 @@ class Settings(BaseSettings):
     # Configuração Geral
     JARVIS_ENV: str = "production"
     JARVIS_LOG_LEVEL: str = "INFO"
+    JARVIS_AUTH_ENABLED: bool = Field(
+        default=True,
+        description="Ativa ou desativa a exigência de Bearer token"
+    )
     JARVIS_API_KEY: str = Field(
         default="jarvis-dev-insecure-key-replace-in-production",
-        description="Chave pre-shared para autenticação Bearer token"
+        description="Chave pre-shared para autenticação Bearer token (defina como 'none' para desativar)"
     )
     
-    # Domínio / Proxy
-    JARVIS_DOMAIN: str = "jarvis.homelab.local"
+    # Domínio / Proxy (opcional, flexível para qualquer domínio ou reverse proxy como Cosmos)
+    JARVIS_DOMAIN: Optional[str] = None
+    JARVIS_CORS_ORIGINS: str = "*"
     
     # Integração Proxmox VE
     PROXMOX_ENABLED: bool = False
@@ -59,6 +64,23 @@ class Settings(BaseSettings):
     
     # Allowlist de Serviços do Homelab para Healthcheck
     HOMELAB_SERVICES: str = "[]"
+
+    @property
+    def is_auth_required(self) -> bool:
+        """Determina se a validação de token Bearer deve ser exigida nas rotas."""
+        if not self.JARVIS_AUTH_ENABLED:
+            return False
+        key = (self.JARVIS_API_KEY or "").strip().lower()
+        if key in ["", "none", "disabled", "false", "off"]:
+            return False
+        return True
+
+    @property
+    def cors_origins_list(self) -> List[str]:
+        """Devolve a lista de origens CORS autorizadas."""
+        if not self.JARVIS_CORS_ORIGINS or self.JARVIS_CORS_ORIGINS.strip() == "*":
+            return ["*"]
+        return [o.strip() for o in self.JARVIS_CORS_ORIGINS.split(",") if o.strip()]
 
     @property
     def allowed_ha_entities(self) -> List[str]:

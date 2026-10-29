@@ -25,7 +25,10 @@ async def lifespan(app: FastAPI):
     logger.info("   JARVIS XR BACKEND INICIALIZADO (FASE 2)       ")
     logger.info("==================================================")
     logger.info(f"Ambiente: {settings.JARVIS_ENV}")
-    logger.info(f"Domínio Configurado: {settings.JARVIS_DOMAIN}")
+    domain_display = settings.JARVIS_DOMAIN if settings.JARVIS_DOMAIN else "Dinâmico / Qualquer (Reverse Proxy)"
+    logger.info(f"Domínio Configurado: {domain_display}")
+    logger.info(f"Autenticação Bearer Ativa: {settings.is_auth_required}")
+    logger.info(f"Origens CORS: {settings.cors_origins_list}")
     logger.info(f"Proxmox Ativo: {settings.PROXMOX_ENABLED}")
     logger.info(f"Home Assistant Ativo: {settings.HOME_ASSISTANT_ENABLED}")
     logger.info(f"Fornecedor DNS: {settings.DNS_PROVIDER}")
@@ -44,23 +47,24 @@ app = FastAPI(
     openapi_url="/api/openapi.json"
 )
 
-# CORS Restritivo
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost",
-        "https://localhost",
-        "http://localhost:80",
-        "https://localhost:443",
-        "http://127.0.0.1",
-        "https://127.0.0.1",
-        f"https://{settings.JARVIS_DOMAIN}",
-        f"http://{settings.JARVIS_DOMAIN}",
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
-)
+# CORS Flexível e Configurável
+cors_origins = settings.cors_origins_list
+if "*" in cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=".*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 @app.exception_handler(RequestValidationError)

@@ -172,6 +172,18 @@ class JarvisApp {
         await this.handleVmAction(vmid, action, vmName);
       }
     }) as EventListener);
+
+    // Escuta evento de recarregamento de dados (ex: após alterar chave de API)
+    window.addEventListener('jarvis-reload-data', (async () => {
+      await this.loadInitialData();
+    }) as EventListener);
+
+    // Escuta erro 401 de autenticação do backend
+    window.addEventListener('jarvis-auth-error', (() => {
+      this.uiOverlay.setConnectionState('error');
+      this.uiOverlay.setVoiceFeedback('Autenticação necessária (HTTP 401). Abra a configuração de Chave no topo.');
+      this.uiOverlay.openApiKeyModal();
+    }) as EventListener);
   }
 
   private onWindowResize() {
@@ -253,14 +265,47 @@ class JarvisApp {
       await api.getHealth();
       this.uiOverlay.setConnectionState('online');
 
-      const [demo, cmds, homeRes, pveRes, dnsRes, servicesRes] = await Promise.all([
-        api.getDemoStatus(),
-        api.getCommands(),
-        api.getHomeSummary().catch(() => null),
-        api.getProxmoxSummary().catch(() => null),
+      const [demoRes, cmds, homeRes, pveRes, dnsRes, servicesRes] = await Promise.all([
+        api.getDemoStatus().catch(() => null),
+        api.getCommands().catch(() => []),
+        api.getHomeSummary().catch((e) => { console.warn('Falha Home Assistant:', e); return null; }),
+        api.getProxmoxSummary().catch((e) => { console.warn('Falha Proxmox:', e); return null; }),
         api.getDnsSummary().catch(() => null),
         api.getServices().catch(() => null)
       ]);
+
+      const demo: DemoStatusData = demoRes || {
+        is_mock: true,
+        label: 'Dados de Demonstração',
+        home: {
+          temperature_celsius: 21.5,
+          humidity_percent: 50,
+          lights_on: 0,
+          total_lights: 0,
+          entities: []
+        },
+        proxmox: {
+          cluster_name: 'pve',
+          nodes_online: 1,
+          total_nodes: 1,
+          cpu_usage_percent: 0,
+          ram_used_gb: 0,
+          ram_total_gb: 0,
+          ram_usage_percent: 0,
+          vms_running: 0,
+          total_vms: 0,
+          vms: []
+        },
+        dns: {
+          provider: 'none',
+          status: 'inactive',
+          queries_today: 0,
+          blocked_today: 0,
+          block_percentage: 0,
+          clients_active: 0
+        },
+        services: []
+      };
 
       this.demoData = demo;
       this.commands = cmds;

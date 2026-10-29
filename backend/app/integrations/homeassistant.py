@@ -18,6 +18,7 @@ class HomeAssistantAdapter(BaseAdapter):
         self.url = (settings.HOME_ASSISTANT_URL or "").rstrip("/")
         self.token = settings.HOME_ASSISTANT_TOKEN or ""
         self.timeout = settings.HOME_ASSISTANT_TIMEOUT_SECONDS
+        self._cached_labeled_ids: set = set()
 
     def is_configured(self) -> bool:
         """Verifica se a integração está ativa e com credenciais preenchidas."""
@@ -29,21 +30,44 @@ class HomeAssistantAdapter(BaseAdapter):
             "Content-Type": "application/json"
         }
 
+    async def get_labeled_entity_ids(self) -> List[str]:
+        """Obtém IDs das entidades associadas à etiqueta configurada via Template API do HA."""
+        if not self.is_configured():
+            return []
+        target_label = settings.HOME_ASSISTANT_DISCOVERY_LABEL.strip()
+        if not target_label:
+            return []
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                payload = {"template": f"{{{{ label_entities('{target_label}') | tojson }}}}"}
+                res = await client.post(f"{self.url}/api/template", headers=self._get_headers(), json=payload)
+                if res.status_code == 200:
+                    data = json.loads(res.text.strip())
+                    if isinstance(data, list):
+                        self._cached_labeled_ids = set(data)
+                        return [str(x) for x in data]
+        except Exception as e:
+            logger.debug(f"Não foi possível obter entidades via template label do HA: {e}")
+        return list(self._cached_labeled_ids)
+
     def _is_entity_authorized(self, entity_id: str, attributes: Optional[Dict[str, Any]] = None) -> bool:
         """
         Verifica se a entidade está autorizada por:
         1. Presença expressa na allowlist manual (settings.allowed_ha_entities)
-        2. Presença da etiqueta (Label) configurada (ex: 'jarvis') nos atributos ou registry
+        2. Presença no registo de etiquetas dinâmicas do HA (ex: label 'jarvis')
+        3. Presença da etiqueta nos atributos diretos ou friendly_name [jarvis]
         """
         # 1. Verificação na allowlist manual
         if entity_id in settings.allowed_ha_entities:
             return True
 
         # 2. Descoberta dinâmica por etiqueta (Labels do Home Assistant)
-        if settings.HOME_ASSISTANT_DISCOVERY_MODE == "labels" and attributes:
+        if entity_id in self._cached_labeled_ids:
+            return True
+
+        # 3. Verificação de atributos e convenção de nomes
+        if attributes:
             target_label = settings.HOME_ASSISTANT_DISCOVERY_LABEL.lower()
-            
-            # Verifica atributos diretos
             raw_labels = attributes.get("labels") or attributes.get("label") or attributes.get("tags") or []
             if isinstance(raw_labels, str):
                 raw_labels = [raw_labels]
@@ -52,7 +76,6 @@ class HomeAssistantAdapter(BaseAdapter):
                 if str(lbl).lower() == target_label:
                     return True
 
-            # Se o friendly_name ou entity_id contiver [jarvis] como convenção alternativa
             if f"[{target_label}]" in attributes.get("friendly_name", "").lower():
                 return True
 
@@ -78,9 +101,9 @@ class HomeAssistantAdapter(BaseAdapter):
         if not self.is_configured():
             return []
 
-        allowed = settings.allowed_ha_entities
-        if not allowed:
-            return []
+        # Atualiza entidades por etiqueta do Home Assistant
+        if settings.HOME_ASSISTANT_DISCOVERY_MODE == "labels":
+            await self.get_labeled_entity_ids()
 
         entities: List[EntityState] = []
         try:

@@ -18,9 +18,13 @@
         <div class="hud-brand">
           <div class="status-pulse-dot" id="system-status-indicator"></div>
           <span class="brand-title">JARVIS <span class="brand-xr">XR</span></span>
-          <span class="badge badge-demo">[FASE 2: DEMO MODE]</span>
+          <span class="badge" id="hud-system-badge" style="color: var(--color-success); border-color: var(--color-success); background: rgba(0, 255, 157, 0.1);">SISTEMA ATIVO</span>
         </div>
         <div class="hud-stats">
+          <button id="btn-config-key" class="stat-pill" style="cursor: pointer; background: rgba(0, 229, 255, 0.12); border: 1px solid rgba(0, 229, 255, 0.4);" title="Configurar Token de API">
+            <span class="stat-label">TOKEN API:</span>
+            <span class="stat-val" id="api-key-indicator" style="color: #00e5ff;">CONFIGURAR</span>
+          </button>
           <div class="stat-pill">
             <span class="stat-label">LIGAÇÃO:</span>
             <span class="stat-val" id="conn-status">A VERIFICAR...</span>
@@ -75,6 +79,34 @@
           </button>
         </div>
       </footer>
+    </div>
+
+    <!-- Modal de Configuração de Chave API (Auth) -->
+    <div id="modal-api-key" class="modal-backdrop" style="display: none;">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <span>🔑 CONFIGURAÇÃO DE TOKEN DE API</span>
+          <button id="btn-close-modal-key" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="color: var(--color-text-dim); font-size: 0.85rem; margin-bottom: 12px; line-height: 1.4;">
+            Insira o seu <strong>JARVIS_API_KEY</strong> definido no servidor. Se a autenticação estiver desativada (<code style="color: #00e5ff;">JARVIS_AUTH_ENABLED=false</code> ou <code style="color: #00e5ff;">JARVIS_API_KEY=none</code>), deixe em branco.
+          </p>
+          <div style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 0.75rem; color: #00e5ff; margin-bottom: 6px; font-weight: bold;">TOKEN BEARER DA API:</label>
+            <input type="password" id="input-api-key" placeholder="Ex: sua-chave-secreta-aleatoria" style="width: 100%; box-sizing: border-box; background: rgba(0, 0, 0, 0.7); border: 1px solid rgba(0, 229, 255, 0.4); border-radius: 4px; padding: 10px; color: #fff; font-family: monospace; font-size: 0.9rem;" />
+          </div>
+          <div style="display: flex; gap: 8px; justify-content: flex-end;">
+            <button id="btn-clear-key" class="action-btn" style="background: rgba(255, 51, 102, 0.15); border-color: #ff3366; color: #ff3366; padding: 8px 14px; font-size: 0.8rem;">LIMPAR</button>
+            <button id="btn-save-key" class="action-btn" style="padding: 8px 16px; font-size: 0.8rem;">GUARDAR & RECONECTAR</button>
+          </div>
+          <div style="margin-top: 14px; padding: 10px; background: rgba(0, 229, 255, 0.05); border: 1px dashed rgba(0, 229, 255, 0.2); border-radius: 4px;">
+            <span style="font-size: 0.75rem; color: var(--color-text-dim);">
+              💡 <em>Dica Meta Quest 3S:</em> Pode abrir a aplicação diretamente com <code style="color: #00e5ff;">?key=SEU_TOKEN</code> no URL para autenticar de imediato sem digitar no teclado virtual!
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

@@ -1,6 +1,7 @@
 /**
  * Gestor da Interface HUD 2D e Renderização dos Painéis
  */
+import { api } from '../api/client';
 import type {
   DemoStatusData,
   JarvisCommand,
@@ -45,6 +46,65 @@ export class UiOverlayManager {
         });
       }
     });
+
+    // Controlos do Modal de Chave API
+    const btnConfigKey = document.getElementById('btn-config-key');
+    const btnCloseModal = document.getElementById('btn-close-modal-key');
+    const btnSaveKey = document.getElementById('btn-save-key');
+    const btnClearKey = document.getElementById('btn-clear-key');
+    const inputKey = document.getElementById('input-api-key') as HTMLInputElement | null;
+
+    if (btnConfigKey) {
+      btnConfigKey.addEventListener('click', () => this.openApiKeyModal());
+    }
+    if (btnCloseModal) {
+      btnCloseModal.addEventListener('click', () => this.closeApiKeyModal());
+    }
+    if (btnSaveKey && inputKey) {
+      btnSaveKey.addEventListener('click', () => {
+        api.setApiKey(inputKey.value);
+        this.updateKeyIndicator();
+        this.closeApiKeyModal();
+        window.dispatchEvent(new CustomEvent('jarvis-reload-data'));
+      });
+    }
+    if (btnClearKey && inputKey) {
+      btnClearKey.addEventListener('click', () => {
+        api.setApiKey('');
+        inputKey.value = '';
+        this.updateKeyIndicator();
+        this.closeApiKeyModal();
+        window.dispatchEvent(new CustomEvent('jarvis-reload-data'));
+      });
+    }
+
+    this.updateKeyIndicator();
+  }
+
+  public updateKeyIndicator() {
+    const indicator = document.getElementById('api-key-indicator');
+    if (indicator) {
+      const key = api.getApiKey();
+      if (!key || key === 'jarvis-dev-insecure-key-replace-in-production') {
+        indicator.textContent = 'PADRÃO / VAZIO';
+        indicator.style.color = '#ffb700';
+      } else {
+        indicator.textContent = 'PERSONALIZADO';
+        indicator.style.color = '#00ff9d';
+      }
+    }
+  }
+
+  public openApiKeyModal() {
+    const modal = document.getElementById('modal-api-key');
+    const inputKey = document.getElementById('input-api-key') as HTMLInputElement | null;
+    if (modal) modal.style.display = 'flex';
+    if (inputKey) inputKey.value = api.getApiKey();
+  }
+
+  public closeApiKeyModal() {
+    const modal = document.getElementById('modal-api-key');
+    if (modal) modal.style.display = 'none';
   }
 
   public switchTab(tab: string) {

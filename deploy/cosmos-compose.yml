@@ -13,8 +13,13 @@ services:
     environment:
       - JARVIS_ENV=production
       - JARVIS_LOG_LEVEL=INFO
-      # Gere um token aleatório seguro (mínimo 32 caracteres)
-      - JARVIS_API_KEY=substitua-por-um-token-secreto-aleatorio-32-chars
+      # Autenticação: Defina 'false' para acesso direto na sua rede local privada (sem pedir token)
+      # Ou defina 'true' e preencha uma JARVIS_API_KEY à sua escolha
+      - JARVIS_AUTH_ENABLED=false
+      - JARVIS_API_KEY=
+      # Domínio próprio personalizado (opcional - deixe vazio para deteção dinâmica pelo Cosmos Cloud)
+      - JARVIS_DOMAIN=
+      - JARVIS_CORS_ORIGINS=*
 
       # Integração Proxmox VE
       - PROXMOX_ENABLED=true
