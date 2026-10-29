@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     HOME_ASSISTANT_URL: Optional[str] = None
     HOME_ASSISTANT_TOKEN: Optional[str] = None
     HOME_ASSISTANT_TIMEOUT_SECONDS: int = 5
+    HOME_ASSISTANT_VERIFY_SSL: bool = False
     # Modo de descoberta: "labels" (automático por etiqueta do HA) ou "manual" (por lista de IDs)
     HOME_ASSISTANT_DISCOVERY_MODE: str = "labels"
     # Nome da etiqueta a procurar no Home Assistant (ex: "jarvis" ou "jarvis-xr")

@@ -18,6 +18,7 @@ class HomeAssistantAdapter(BaseAdapter):
         self.url = (settings.HOME_ASSISTANT_URL or "").rstrip("/")
         self.token = settings.HOME_ASSISTANT_TOKEN or ""
         self.timeout = settings.HOME_ASSISTANT_TIMEOUT_SECONDS
+        self.verify_ssl = settings.HOME_ASSISTANT_VERIFY_SSL
         self._cached_labeled_ids: set = set()
 
     def is_configured(self) -> bool:
@@ -38,7 +39,7 @@ class HomeAssistantAdapter(BaseAdapter):
         if not target_label:
             return []
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
                 payload = {"template": f"{{{{ label_entities('{target_label}') | tojson }}}}"}
                 res = await client.post(f"{self.url}/api/template", headers=self._get_headers(), json=payload)
                 if res.status_code == 200:
@@ -87,7 +88,7 @@ class HomeAssistantAdapter(BaseAdapter):
             return {"configured": False, "status": "disabled", "message": "Integração inativa"}
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
                 res = await client.get(f"{self.url}/api/", headers=self._get_headers())
                 if res.status_code == 200:
                     return {"configured": True, "status": "operational", "message": res.json().get("message", "API OK")}
@@ -107,7 +108,7 @@ class HomeAssistantAdapter(BaseAdapter):
 
         entities: List[EntityState] = []
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
                 res = await client.get(f"{self.url}/api/states", headers=self._get_headers())
                 if res.status_code != 200:
                     logger.error(f"Erro ao consultar estados do Home Assistant: HTTP {res.status_code}")
@@ -211,7 +212,7 @@ class HomeAssistantAdapter(BaseAdapter):
             payload["brightness"] = brightness
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
                 res = await client.post(
                     f"{self.url}/api/services/light/{service_name}",
                     headers=self._get_headers(),
@@ -252,7 +253,7 @@ class HomeAssistantAdapter(BaseAdapter):
         payload = {"entity_id": entity_id}
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
                 res = await client.post(
                     f"{self.url}/api/services/switch/{service_name}",
                     headers=self._get_headers(),
@@ -289,7 +290,7 @@ class HomeAssistantAdapter(BaseAdapter):
             return ActionExecutionResult(success=False, entity_id=entity_id, new_state="invalid_domain", message=f"Entidade '{entity_id}' não pertence ao domínio scene")
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
                 res = await client.post(
                     f"{self.url}/api/services/scene/turn_on",
                     headers=self._get_headers(),
@@ -326,7 +327,7 @@ class HomeAssistantAdapter(BaseAdapter):
 
         results = {}
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
                 # 1. Tenta atualizar input_boolean se existir
                 if domain in ["input_boolean", "switch"]:
                     await client.post(
