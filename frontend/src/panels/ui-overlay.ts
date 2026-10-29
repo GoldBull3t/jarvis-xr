@@ -22,7 +22,7 @@ export class UiOverlayManager {
   private systemIndicator: HTMLElement;
 
   private currentTab: string = 'home';
-  private homeViewMode: 'native' | 'tactical' = 'native';
+  private homeViewMode: 'native' | 'tactical' = 'tactical';
   private homeActiveFilter: string = 'all';
   private homeSearchQuery: string = '';
   private selectedHaUrl: string = '';
@@ -356,6 +356,19 @@ export class UiOverlayManager {
 
         ${this.homeViewMode === 'native' ? `
           <!-- MODO 1: WEBVIEW NATIVO COMPLETO DO HOME ASSISTANT -->
+          <!-- Acesso Direto em Nova Janela (100% Funcional sem Restrições de Iframe) -->
+          <div style="display: flex; gap: 8px; margin-bottom: 8px; justify-content: space-between; align-items: center; background: rgba(0, 229, 255, 0.12); border: 1px solid var(--color-primary-cyan); border-radius: 4px; padding: 8px 12px; flex-wrap: wrap;">
+            <div>
+              <span style="font-weight: bold; color: #fff; font-size: 0.82rem;">DASHBOARD COMPLETO (LOVELACE, HACS, DEFINIÇÕES)</span>
+              <div style="font-size: 0.70rem; color: var(--color-text-dim); margin-top: 2px;">
+                Se o quadro abaixo for bloqueado pelo navegador devido a políticas de segurança (SAMEORIGIN), use o botão ao lado:
+              </div>
+            </div>
+            <button class="action-btn" id="btn-ha-launch-window" style="background: var(--color-primary-cyan); color: #000; font-weight: bold; padding: 7px 16px; font-size: 0.78rem; border: none; cursor: pointer; border-radius: 4px; box-shadow: 0 0 10px rgba(0,229,255,0.4);">
+              🚀 ABRIR EM NOVA JANELA
+            </button>
+          </div>
+
           <!-- Barra de Navegação e Configuração de URL do Quadro -->
           <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 8px; background: rgba(0, 229, 255, 0.05); padding: 6px 10px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.2); flex-wrap: wrap;">
             <span style="font-size: 0.72rem; color: var(--color-primary-cyan); font-weight: bold;">ENDEREÇO:</span>
@@ -503,6 +516,14 @@ export class UiOverlayManager {
       btnQuickLocal.addEventListener('click', () => {
         const localUrl = this.homeData?.primary_url || 'http://192.168.30.180:8123';
         updateCustomUrl(localUrl);
+      });
+    }
+
+    const btnLaunchWindow = document.getElementById('btn-ha-launch-window');
+    if (btnLaunchWindow) {
+      btnLaunchWindow.addEventListener('click', () => {
+        soundFX.playClick();
+        window.open(haUrl, '_blank');
       });
     }
 
