@@ -23,9 +23,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Lowercase Repository Name
-        id: repo-name
+      - name: Lowercase Repository and Owner Names
+        id: names
         run: |
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_OUTPUT
           echo "repo=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
 
       - name: Log in to GitHub Container Registry
@@ -44,8 +45,10 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/${{ steps.repo-name.outputs.repo }}/jarvis-backend:latest
-            ghcr.io/${{ steps.repo-name.outputs.repo }}/jarvis-backend:${{ github.sha }}
+            ghcr.io/${{ steps.names.outputs.owner }}/jarvis-backend:latest
+            ghcr.io/${{ steps.names.outputs.owner }}/jarvis-backend:${{ github.sha }}
+            ghcr.io/${{ steps.names.outputs.repo }}/jarvis-backend:latest
+            ghcr.io/${{ steps.names.outputs.repo }}/jarvis-backend:${{ github.sha }}
           labels: |
             org.opencontainers.image.title=JARVIS XR Backend
             org.opencontainers.image.description=Backend determinístico FastAPI para o JARVIS XR
@@ -60,8 +63,10 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/${{ steps.repo-name.outputs.repo }}/jarvis-frontend:latest
-            ghcr.io/${{ steps.repo-name.outputs.repo }}/jarvis-frontend:${{ github.sha }}
+            ghcr.io/${{ steps.names.outputs.owner }}/jarvis-frontend:latest
+            ghcr.io/${{ steps.names.outputs.owner }}/jarvis-frontend:${{ github.sha }}
+            ghcr.io/${{ steps.names.outputs.repo }}/jarvis-frontend:latest
+            ghcr.io/${{ steps.names.outputs.repo }}/jarvis-frontend:${{ github.sha }}
           labels: |
             org.opencontainers.image.title=JARVIS XR Frontend
             org.opencontainers.image.description=Interface tridimensional WebXR Three.js para o Meta Quest 3S
