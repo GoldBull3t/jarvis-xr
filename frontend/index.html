@@ -37,6 +37,9 @@
             <span class="stat-label">VOZ:</span>
             <span class="stat-val" id="voice-status">PRONTO</span>
           </div>
+          <button id="btn-quick-lock" class="stat-pill" style="cursor: pointer; background: rgba(255, 51, 102, 0.15); border: 1px solid #ff3366; color: #ff8fa3;" title="Bloquear Cockpit com PIN">
+            <span class="stat-label">🔒 BLOQUEAR</span>
+          </button>
         </div>
       </header>
 
@@ -51,11 +54,17 @@
         <button id="btn-tab-network" class="nav-btn">
           <span class="nav-icon">🛡</span> REDE / DNS
         </button>
+        <button id="btn-tab-docker" class="nav-btn">
+          <span class="nav-icon">🐳</span> CONTENTORES
+        </button>
         <button id="btn-tab-services" class="nav-btn">
           <span class="nav-icon">⚡</span> SERVIÇOS
         </button>
         <button id="btn-tab-diagnostics" class="nav-btn">
           <span class="nav-icon">🩺</span> DIAGNÓSTICO
+        </button>
+        <button id="btn-tab-audit" class="nav-btn">
+          <span class="nav-icon">📜</span> AUDITORIA
         </button>
         <button id="btn-tab-commands" class="nav-btn">
           <span class="nav-icon">⌨</span> COMANDOS
@@ -107,6 +116,85 @@
             <span style="font-size: 0.75rem; color: var(--color-text-dim);">
               💡 <em>Dica Meta Quest 3S:</em> Pode abrir a aplicação diretamente com <code style="color: #00e5ff;">?key=SEU_TOKEN</code> no URL para autenticar de imediato sem digitar no teclado virtual!
             </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de Bloqueio por PIN Numérico Virtual (Segurança do Cockpit) -->
+    <div id="modal-pin-lock" class="modal-backdrop" style="display: none; background: rgba(3, 8, 16, 0.94); backdrop-filter: blur(14px);">
+      <div class="modal-dialog" style="max-width: 360px; text-align: center; border-color: var(--color-primary-cyan);">
+        <div class="modal-header" style="justify-content: center; background: rgba(0, 229, 255, 0.15);">
+          <span>🔒 JARVIS XR // COCKPIT BLOQUEADO</span>
+        </div>
+        <div class="modal-body">
+          <p style="font-size: 0.8rem; color: var(--color-text-dim); margin-bottom: 8px;">
+            Introduza o PIN numérico para autorizar o acesso ao sistema:
+          </p>
+          
+          <!-- Indicador de Dígitos -->
+          <div class="pin-display">
+            <div class="pin-dot" id="pin-dot-0"></div>
+            <div class="pin-dot" id="pin-dot-1"></div>
+            <div class="pin-dot" id="pin-dot-2"></div>
+            <div class="pin-dot" id="pin-dot-3"></div>
+          </div>
+
+          <div id="pin-error-msg" style="color: var(--color-danger); font-size: 0.75rem; min-height: 18px; margin-bottom: 8px; font-weight: bold;"></div>
+
+          <!-- Teclado Numérico Virtual Neon -->
+          <div class="pin-keypad">
+            <button class="pin-key-btn" data-key="1">1</button>
+            <button class="pin-key-btn" data-key="2">2</button>
+            <button class="pin-key-btn" data-key="3">3</button>
+            <button class="pin-key-btn" data-key="4">4</button>
+            <button class="pin-key-btn" data-key="5">5</button>
+            <button class="pin-key-btn" data-key="6">6</button>
+            <button class="pin-key-btn" data-key="7">7</button>
+            <button class="pin-key-btn" data-key="8">8</button>
+            <button class="pin-key-btn" data-key="9">9</button>
+            <button class="pin-key-btn action-clear" id="btn-pin-clear">⌫</button>
+            <button class="pin-key-btn" data-key="0">0</button>
+            <button class="pin-key-btn action-unlock" id="btn-pin-submit">OK</button>
+          </div>
+
+          <div style="margin-top: 16px; font-size: 0.7rem; color: var(--color-text-dim);">
+            PIN predefinido: <code style="color: var(--color-primary-cyan);">1234</code> (configurável em JARVIS_ACCESS_PIN)
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal do Explorador de Entidades / Adicionar Dispositivos ao HUD -->
+    <div id="modal-device-explorer" class="modal-backdrop" style="display: none;">
+      <div class="modal-dialog" style="max-width: 680px; width: 95%;">
+        <div class="modal-header">
+          <span>➕ EXPLORADOR DE DISPOSITIVOS // ADICIONAR AO HUD</span>
+          <button id="btn-close-device-explorer" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 14px;">
+          <p style="font-size: 0.78rem; color: var(--color-text-dim); margin-bottom: 10px;">
+            Selecione dispositivos do Home Assistant para fixar no <strong>HUD 3D / Realidade Aumentada</strong> e no painel tático:
+          </p>
+
+          <input 
+            type="text" 
+            id="explorer-search-input" 
+            placeholder="🔍 Pesquisar por nome, entidade (ex: luz, tomada, sensor)..."
+            style="width: 100%; box-sizing: border-box; background: rgba(5, 11, 20, 0.8); border: 1px solid rgba(0, 229, 255, 0.3); color: #fff; padding: 8px 12px; border-radius: 4px; font-size: 0.82rem; font-family: monospace; margin-bottom: 10px;"
+          />
+
+          <div id="explorer-entities-list" style="max-height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+            <!-- Renderizado dinamicamente -->
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding-top: 10px; border-top: 1px solid rgba(0, 229, 255, 0.2);">
+            <span id="explorer-pinned-count" style="font-size: 0.78rem; color: var(--color-primary-cyan); font-weight: bold;">
+              0 dispositivos fixados
+            </span>
+            <button id="btn-save-explorer-favorites" class="action-btn" style="padding: 6px 16px; font-size: 0.8rem;">
+              CONCLUÍDO & ATUALIZAR HUD
+            </button>
           </div>
         </div>
       </div>

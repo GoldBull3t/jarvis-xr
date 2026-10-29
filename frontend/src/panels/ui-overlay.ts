@@ -12,7 +12,11 @@ import type {
   DnsSummaryData,
   OpenWrtSummaryData,
   ServiceHealthItem,
-  FullDiagnosticsData
+  FullDiagnosticsData,
+  PinStatusData,
+  DockerSummaryData,
+  AuditLogItem,
+  TrendHistory
 } from '../types';
 
 export class UiOverlayManager {
@@ -34,7 +38,20 @@ export class UiOverlayManager {
   private openwrtData: OpenWrtSummaryData | null = null;
   private servicesData: ServiceHealthItem[] | null = null;
   private diagnosticsData: FullDiagnosticsData | null = null;
+  private dockerData: DockerSummaryData | null = null;
+  private auditLogs: AuditLogItem[] = [];
+  private favoriteEntityIds: string[] = [];
   private commands: JarvisCommand[] = [];
+
+  // Estado de Segurança por PIN e Bloqueio Automático
+  private enteredPin: string = '';
+  private isLocked: boolean = false;
+  private pinRequired: boolean = true;
+  private autoLockTimeout: any = null;
+  private autoLockMinutes: number = 5;
+
+  // Histórico de Tendências para Gráficos Sparkline (Buffer circular de 30 pontos)
+  private trends: TrendHistory = { wan_rx: [], wan_tx: [], cpu: [], temp: [] };
 
   constructor() {
     this.mainPanel = document.getElementById('hud-main-panel')!;
@@ -43,11 +60,20 @@ export class UiOverlayManager {
     this.voiceTranscript = document.getElementById('voice-transcript')!;
     this.systemIndicator = document.getElementById('system-status-indicator')!;
 
+    // Carrega favoritos locais de contingência
+    try {
+      const savedFavs = localStorage.getItem('jarvis_hud_favorites');
+      if (savedFavs) this.favoriteEntityIds = JSON.parse(savedFavs);
+    } catch {}
+
     this.bindEvents();
+    this.bindSecurityEvents();
+    this.bindDeviceExplorerEvents();
+    this.resetAutoLockTimer();
   }
 
   private bindEvents() {
-    const tabs = ['home', 'proxmox', 'network', 'services', 'diagnostics', 'commands'];
+    const tabs = ['home', 'proxmox', 'network', 'docker', 'services', 'diagnostics', 'audit', 'commands'];
     tabs.forEach((tab) => {
       const btn = document.getElementById(`btn-tab-${tab}`);
       if (btn) {
@@ -117,6 +143,337 @@ export class UiOverlayManager {
     if (modal) modal.style.display = 'none';
   }
 
+  /* ============================================================================
+   * 1. SEGURANÇA: ECRÃ DE BLOQUEIO POR PIN NUMÉRICO VIRTUAL & AUTO-LOCK
+   * ============================================================================ */
+  private bindSecurityEvents() {
+    const btnQuickLock = document.getElementById('btn-quick-lock');
+    if (btnQuickLock) {
+      btnQuickLock.addEventListener('click', () => {
+        soundFX.playClick();
+        this.lockCockpit();
+      });
+    }
+
+    // Teclas numéricas virtuais
+    document.querySelectorAll('.pin-key-btn[data-key]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const key = (e.currentTarget as HTMLElement).getAttribute('data-key');
+        if (key) this.handlePinDigit(key);
+      });
+    });
+
+    const btnClear = document.getElementById('btn-pin-clear');
+    if (btnClear) {
+      btnClear.addEventListener('click', () => this.clearPin());
+    }
+
+    const btnSubmit = document.getElementById('btn-pin-submit');
+    if (btnSubmit) {
+      btnSubmit.addEventListener('click', () => this.submitPin());
+    }
+
+    // Suporte para teclado físico
+    window.addEventListener('keydown', (e) => {
+      this.resetAutoLockTimer();
+      if (!this.isLocked) return;
+      if (e.key >= '0' && e.key <= '9') {
+        this.handlePinDigit(e.key);
+      } else if (e.key === 'Backspace') {
+        this.clearPin();
+      } else if (e.key === 'Enter') {
+        this.submitPin();
+      }
+    });
+
+    // Detetor de atividade para reiniciar temporizador de auto-lock
+    ['pointerdown', 'mousemove', 'wheel', 'touchstart'].forEach((evt) => {
+      window.addEventListener(evt, () => this.resetAutoLockTimer(), { passive: true });
+    });
+  }
+
+  public initPinStatus(status: PinStatusData | null) {
+    if (!status) return;
+    this.pinRequired = status.pin_required;
+    this.autoLockMinutes = status.auto_lock_minutes || 5;
+    if (this.pinRequired && status.is_locked) {
+      this.lockCockpit();
+    }
+  }
+
+  public lockCockpit() {
+    this.isLocked = true;
+    this.enteredPin = '';
+    this.updatePinDisplay();
+    const modal = document.getElementById('modal-pin-lock');
+    if (modal) modal.style.display = 'flex';
+    const err = document.getElementById('pin-error-msg');
+    if (err) err.textContent = '';
+    soundFX.playAlert();
+    window.dispatchEvent(new CustomEvent('jarvis-cockpit-locked', { detail: { locked: true } }));
+  }
+
+  public unlockCockpit() {
+    this.isLocked = false;
+    this.enteredPin = '';
+    const modal = document.getElementById('modal-pin-lock');
+    if (modal) modal.style.display = 'none';
+    soundFX.playSuccessTone();
+    this.resetAutoLockTimer();
+    window.dispatchEvent(new CustomEvent('jarvis-cockpit-locked', { detail: { locked: false } }));
+  }
+
+  private handlePinDigit(digit: string) {
+    if (this.enteredPin.length < 4) {
+      this.enteredPin += digit;
+      soundFX.playClick();
+      this.updatePinDisplay();
+      if (this.enteredPin.length === 4) {
+        setTimeout(() => this.submitPin(), 140);
+      }
+    }
+  }
+
+  private clearPin() {
+    if (this.enteredPin.length > 0) {
+      this.enteredPin = this.enteredPin.slice(0, -1);
+      soundFX.playClick();
+      this.updatePinDisplay();
+    }
+  }
+
+  private async submitPin() {
+    if (this.enteredPin.length === 0) return;
+    const err = document.getElementById('pin-error-msg');
+    const isValid = await api.verifyPin(this.enteredPin);
+    if (isValid) {
+      this.unlockCockpit();
+    } else {
+      soundFX.playAlert();
+      if (err) err.textContent = '❌ PIN incorreto. Tente novamente.';
+      this.enteredPin = '';
+      this.updatePinDisplay();
+    }
+  }
+
+  private updatePinDisplay() {
+    for (let i = 0; i < 4; i++) {
+      const dot = document.getElementById(`pin-dot-${i}`);
+      if (dot) {
+        if (i < this.enteredPin.length) {
+          dot.classList.add('filled');
+        } else {
+          dot.classList.remove('filled');
+        }
+      }
+    }
+  }
+
+  private resetAutoLockTimer() {
+    if (this.autoLockTimeout) clearTimeout(this.autoLockTimeout);
+    if (!this.pinRequired) return;
+    this.autoLockTimeout = setTimeout(() => {
+      if (!this.isLocked) {
+        this.lockCockpit();
+      }
+    }, this.autoLockMinutes * 60 * 1000);
+  }
+
+  /* ============================================================================
+   * 2. EXPLORADOR DE ENTIDADES & GESTÃO DINÂMICA DE DISPOSITIVOS NO HUD
+   * ============================================================================ */
+  private bindDeviceExplorerEvents() {
+    const btnClose = document.getElementById('btn-close-device-explorer');
+    if (btnClose) btnClose.addEventListener('click', () => this.closeDeviceExplorer());
+
+    const btnSave = document.getElementById('btn-save-explorer-favorites');
+    if (btnSave) {
+      btnSave.addEventListener('click', () => {
+        this.saveFavorites();
+        this.closeDeviceExplorer();
+      });
+    }
+
+    const searchInput = document.getElementById('explorer-search-input') as HTMLInputElement | null;
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        this.renderDeviceExplorerList(searchInput.value);
+      });
+    }
+  }
+
+  public openDeviceExplorer() {
+    const modal = document.getElementById('modal-device-explorer');
+    if (modal) modal.style.display = 'flex';
+    soundFX.playClick();
+    this.renderDeviceExplorerList();
+  }
+
+  public closeDeviceExplorer() {
+    const modal = document.getElementById('modal-device-explorer');
+    if (modal) modal.style.display = 'none';
+  }
+
+  public setFavorites(favs: string[]) {
+    this.favoriteEntityIds = favs;
+    if (this.currentTab === 'home') this.renderHome();
+  }
+
+  public async toggleFavorite(entityId: string) {
+    soundFX.playClick();
+    const idx = this.favoriteEntityIds.indexOf(entityId);
+    if (idx >= 0) {
+      this.favoriteEntityIds.splice(idx, 1);
+    } else {
+      this.favoriteEntityIds.push(entityId);
+    }
+    await this.saveFavorites();
+    if (this.currentTab === 'home') this.renderHome();
+  }
+
+  private async saveFavorites() {
+    await api.saveFavorites(this.favoriteEntityIds);
+    window.dispatchEvent(new CustomEvent('jarvis-favorites-updated', { detail: { favorites: this.favoriteEntityIds } }));
+  }
+
+  private renderDeviceExplorerList(query: string = '') {
+    const listEl = document.getElementById('explorer-entities-list');
+    const countEl = document.getElementById('explorer-pinned-count');
+    if (countEl) countEl.textContent = `${this.favoriteEntityIds.length} dispositivos fixados`;
+    if (!listEl) return;
+
+    const entities = (this.homeData?.authorized_entities || []).filter(e => {
+      if (!query.trim()) return true;
+      const q = query.toLowerCase();
+      return e.friendly_name.toLowerCase().includes(q) || e.entity_id.toLowerCase().includes(q) || (e.area_name && e.area_name.toLowerCase().includes(q));
+    });
+
+    if (entities.length === 0) {
+      listEl.innerHTML = `<div style="color: var(--color-text-dim); padding: 16px; text-align: center; font-size: 0.8rem;">Nenhum dispositivo encontrado.</div>`;
+      return;
+    }
+
+    listEl.innerHTML = entities.map(e => {
+      const isPinned = this.favoriteEntityIds.includes(e.entity_id);
+      return `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: rgba(5,11,20,0.7); border: 1px solid ${isPinned ? 'var(--color-primary-cyan)' : 'rgba(255,255,255,0.1)'}; border-radius: 4px;">
+          <div>
+            <div style="font-weight: bold; color: #fff; font-size: 0.82rem;">${e.friendly_name}</div>
+            <div style="font-size: 0.65rem; color: var(--color-text-dim); font-family: monospace;">${e.entity_id} ${e.area_name ? `• 📍 ${e.area_name}` : ''}</div>
+          </div>
+          <button class="action-btn toggle-explorer-pin-btn" data-entity-id="${e.entity_id}" style="padding: 4px 10px; font-size: 0.72rem; ${isPinned ? 'background: rgba(255,183,0,0.25); border-color: #ffb700; color: #ffb700;' : 'background: rgba(0,229,255,0.15); color: #fff;'}">
+            ${isPinned ? '⭐ FIXADO' : '📌 FIXAR'}
+          </button>
+        </div>
+      `;
+    }).join('');
+
+    listEl.querySelectorAll('.toggle-explorer-pin-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const entId = (e.currentTarget as HTMLElement).getAttribute('data-entity-id');
+        if (entId) {
+          this.toggleFavorite(entId);
+          this.renderDeviceExplorerList((document.getElementById('explorer-search-input') as HTMLInputElement)?.value || '');
+        }
+      });
+    });
+  }
+
+  /* ============================================================================
+   * 3. HOLD-TO-CONFIRM (PROTEÇÃO DE COMANDOS CRÍTICOS EM XR E 2D)
+   * ============================================================================ */
+  private attachHoldToConfirm(btn: HTMLElement, onConfirm: () => void, durationMs: number = 1500) {
+    let startTime = 0;
+    let animId: any = null;
+
+    const startHold = (e: Event) => {
+      e.preventDefault();
+      startTime = Date.now();
+      soundFX.playClick();
+
+      const updateProgress = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min((elapsed / durationMs) * 100, 100);
+        btn.style.setProperty('--hold-progress', `${progress}%`);
+
+        if (elapsed >= durationMs) {
+          btn.style.setProperty('--hold-progress', '0%');
+          soundFX.playSuccessTone();
+          onConfirm();
+        } else {
+          animId = requestAnimationFrame(updateProgress);
+        }
+      };
+
+      animId = requestAnimationFrame(updateProgress);
+    };
+
+    const cancelHold = () => {
+      if (animId) {
+        cancelAnimationFrame(animId);
+        animId = null;
+      }
+      btn.style.setProperty('--hold-progress', '0%');
+    };
+
+    btn.addEventListener('pointerdown', startHold);
+    btn.addEventListener('pointerup', cancelHold);
+    btn.addEventListener('pointercancel', cancelHold);
+    btn.addEventListener('mouseleave', cancelHold);
+  }
+
+  /* ============================================================================
+   * 4. MINI GRÁFICOS SPARKLINES DE TENDÊNCIA
+   * ============================================================================ */
+  private pushTrendPoint(rx: number, tx: number, cpu: number, temp: number) {
+    const maxPoints = 25;
+    this.trends.wan_rx.push(rx);
+    if (this.trends.wan_rx.length > maxPoints) this.trends.wan_rx.shift();
+
+    this.trends.wan_tx.push(tx);
+    if (this.trends.wan_tx.length > maxPoints) this.trends.wan_tx.shift();
+
+    this.trends.cpu.push(cpu);
+    if (this.trends.cpu.length > maxPoints) this.trends.cpu.shift();
+
+    this.trends.temp.push(temp);
+    if (this.trends.temp.length > maxPoints) this.trends.temp.shift();
+  }
+
+  private drawSparkline(canvasId: string, data: number[], color: string) {
+    const canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
+    if (!canvas || data.length < 2) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const min = 0;
+    const max = Math.max(...data, 1);
+    const step = w / (data.length - 1);
+
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+
+    data.forEach((val, i) => {
+      const x = i * step;
+      const y = h - ((val - min) / (max - min)) * (h - 6) - 3;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    ctx.fillStyle = color === '#00ff9d' ? 'rgba(0, 255, 157, 0.15)' : 'rgba(0, 229, 255, 0.15)';
+    ctx.fill();
+  }
+
   public switchTab(tab: string) {
     this.currentTab = tab;
     soundFX.playClick();
@@ -159,7 +516,9 @@ export class UiOverlayManager {
     dnsData?: DnsSummaryData | null,
     servicesData?: ServiceHealthItem[] | null,
     diagnosticsData?: FullDiagnosticsData | null,
-    openwrtData?: OpenWrtSummaryData | null
+    openwrtData?: OpenWrtSummaryData | null,
+    dockerData?: DockerSummaryData | null,
+    auditLogs?: AuditLogItem[] | null
   ) {
     this.demoData = demoData;
     this.commands = commands;
@@ -169,6 +528,19 @@ export class UiOverlayManager {
     if (servicesData !== undefined) this.servicesData = servicesData;
     if (diagnosticsData !== undefined) this.diagnosticsData = diagnosticsData;
     if (openwrtData !== undefined) this.openwrtData = openwrtData;
+    if (dockerData !== undefined) this.dockerData = dockerData;
+    if (auditLogs !== undefined && auditLogs) this.auditLogs = auditLogs;
+
+    // Atualiza histórico de tendências (Sparklines)
+    if (this.openwrtData || this.pveData) {
+      this.pushTrendPoint(
+        this.openwrtData?.wan_download_mbps || 0,
+        this.openwrtData?.wan_upload_mbps || 0,
+        this.pveData?.cpu_usage_percent || 0,
+        this.openwrtData?.soc_temperature_celsius || 0
+      );
+    }
+
     this.render();
   }
 
@@ -193,11 +565,17 @@ export class UiOverlayManager {
       case 'network':
         this.renderNetwork();
         break;
+      case 'docker':
+        this.renderDocker();
+        break;
       case 'services':
         this.renderServices();
         break;
       case 'diagnostics':
         this.renderDiagnostics();
+        break;
+      case 'audit':
+        this.renderAudit();
         break;
       case 'commands':
         this.renderCommands();
@@ -288,6 +666,9 @@ export class UiOverlayManager {
         const matchArea = (ent.area_name || '').toLowerCase().includes(query);
         if (!matchName && !matchId && !matchArea) return false;
       }
+      if (this.homeActiveFilter === 'favorites') {
+        return this.favoriteEntityIds.includes(ent.entity_id);
+      }
       if (this.homeActiveFilter === 'all' || this.homeActiveFilter === 'areas') {
         return true;
       }
@@ -302,6 +683,7 @@ export class UiOverlayManager {
 
     const categories = [
       { id: 'all', label: `TODOS (${rawEntities.length})` },
+      { id: 'favorites', label: `⭐ FIXADOS (${this.favoriteEntityIds.length})` },
       { id: 'areas', label: `DIVISÕES (${areasList.length})` },
       { id: 'light', label: `LUZES (${totalLights})` },
       { id: 'switch', label: `TOMADAS (${totalSwitches})` },
@@ -449,15 +831,20 @@ export class UiOverlayManager {
             </div>
           ` : ''}
 
-          <!-- Barra de Pesquisa e Filtros de Categoria -->
-          <div style="margin-bottom: 10px;">
+          <!-- Barra de Pesquisa e Botão de Adicionar Dispositivos ao HUD -->
+          <div style="display: flex; gap: 8px; margin-bottom: 8px;">
             <input 
               type="text" 
               id="ha-search-input" 
               placeholder="🔍 Filtrar dispositivos, divisões ou tipos..." 
               value="${this.homeSearchQuery}"
-              style="width: 100%; box-sizing: border-box; background: rgba(5, 11, 20, 0.8); border: 1px solid rgba(0, 229, 255, 0.3); color: #fff; padding: 6px 10px; border-radius: 4px; font-size: 0.75rem; font-family: monospace; margin-bottom: 8px;"
+              style="flex: 1; box-sizing: border-box; background: rgba(5, 11, 20, 0.8); border: 1px solid rgba(0, 229, 255, 0.3); color: #fff; padding: 6px 10px; border-radius: 4px; font-size: 0.75rem; font-family: monospace;"
             />
+            <button id="btn-open-explorer" class="action-btn" style="padding: 6px 12px; font-size: 0.72rem; background: rgba(0, 229, 255, 0.2); border-color: var(--color-primary-cyan); white-space: nowrap;">
+              ➕ ADICIONAR AO HUD
+            </button>
+          </div>
+          <div style="margin-bottom: 10px;">
             <div style="display: flex; flex-wrap: wrap; gap: 4px; max-height: 80px; overflow-y: auto;">
               ${categories.map(cat => `
                 <button 
@@ -579,6 +966,21 @@ export class UiOverlayManager {
       });
     }
 
+    // Interatividade do Botão de Abrir Explorador de Dispositivos
+    const btnOpenExplorer = document.getElementById('btn-open-explorer');
+    if (btnOpenExplorer) {
+      btnOpenExplorer.addEventListener('click', () => this.openDeviceExplorer());
+    }
+
+    // Interatividade dos Botões de Fixar/Desafixar Favoritos nos Cartões
+    this.mainPanel.querySelectorAll('.pin-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const entId = (ev.currentTarget as HTMLElement).getAttribute('data-entity-id');
+        if (entId) this.toggleFavorite(entId);
+      });
+    });
+
     // Interatividade da Pesquisa em Tempo Real (modo tático)
     const searchInput = document.getElementById('ha-search-input') as HTMLInputElement | null;
     if (searchInput) {
@@ -657,6 +1059,12 @@ export class UiOverlayManager {
   private renderEntityTile(e: EntityState): string {
     const domain = e.domain;
     const isStateOn = e.state === 'on' || e.state === 'open' || e.state === 'playing' || e.state === 'active';
+    const isPinned = this.favoriteEntityIds.includes(e.entity_id);
+    const pinBtn = `
+      <button class="pin-toggle-btn" data-entity-id="${e.entity_id}" title="${isPinned ? 'Desafixar do HUD' : 'Fixar ao HUD'}" style="background: none; border: none; font-size: 0.95rem; cursor: pointer; color: ${isPinned ? '#ffb700' : 'rgba(255,255,255,0.3)'}; line-height: 1; padding: 2px;">
+        ${isPinned ? '⭐' : '☆'}
+      </button>
+    `;
     const areaTag = e.area_name ? `<span style="font-size: 0.65rem; color: var(--color-primary-cyan);">📍 ${e.area_name}</span>` : '';
 
     // 1. ILUMINAÇÃO (Light)
@@ -666,7 +1074,10 @@ export class UiOverlayManager {
           <div style="display: flex; align-items: center; margin-bottom: 8px;">
             <div class="ha-tile-avatar ${isStateOn ? 'on' : ''}">💡</div>
             <div style="overflow: hidden; flex: 1;">
-              <div style="font-weight: 700; color: #fff; font-size: 0.82rem; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${e.friendly_name}</div>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-weight: 700; color: #fff; font-size: 0.82rem; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${e.friendly_name}</div>
+                ${pinBtn}
+              </div>
               <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
                 <span style="font-size: 0.68rem; color: ${isStateOn ? '#ffb700' : 'var(--color-text-dim)'}; font-weight: bold;">${e.state.toUpperCase()}</span>
                 ${areaTag}
@@ -695,7 +1106,10 @@ export class UiOverlayManager {
           <div style="display: flex; align-items: center; margin-bottom: 8px;">
             <div class="ha-tile-avatar ${isStateOn ? 'on' : ''}">🔌</div>
             <div style="overflow: hidden; flex: 1;">
-              <div style="font-weight: 700; color: #fff; font-size: 0.82rem; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${e.friendly_name}</div>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-weight: 700; color: #fff; font-size: 0.82rem; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${e.friendly_name}</div>
+                ${pinBtn}
+              </div>
               <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
                 <span style="font-size: 0.68rem; color: ${isStateOn ? '#00ff9d' : 'var(--color-text-dim)'}; font-weight: bold;">${e.state.toUpperCase()}</span>
                 ${areaTag}
@@ -994,6 +1408,14 @@ export class UiOverlayManager {
           <div class="progress-bar-fill" style="width: ${Math.min(cpu, 100)}%"></div>
         </div>
 
+        <div class="sparkline-box">
+          <div class="sparkline-header">
+            <span>HISTÓRICO CPU HOST (%)</span>
+            <span style="color: #00e5ff;">${cpu}%</span>
+          </div>
+          <canvas id="canvas-sparkline-cpu" class="sparkline-canvas" width="300" height="40"></canvas>
+        </div>
+
         <div class="data-row">
           <span class="data-label">Memória RAM:</span>
           <span class="data-value">${ramUsed} GB / ${ramTotal} GB (${ramPercent}%)</span>
@@ -1078,11 +1500,11 @@ export class UiOverlayManager {
                     ▶ LIGAR
                   </button>
                 ` : `
-                  <button class="entity-btn action-vm-btn" data-vmid="${vm.vmid}" data-vm-action="shutdown" data-vm-name="${vm.name}" style="background: rgba(255,51,102,0.15); border-color: #ff3366; color: #ff3366;">
-                    ⏻ DESLIGAR
+                  <button class="entity-btn action-vm-btn btn-hold-critical" data-vmid="${vm.vmid}" data-vm-action="shutdown" data-vm-name="${vm.name}" data-critical="true" style="background: rgba(255,51,102,0.15); border-color: #ff3366; color: #ff3366;" title="Mantenha premido 1.5s para desligar">
+                    <span>⏻ DESLIGAR (HOLD)</span>
                   </button>
-                  <button class="entity-btn action-vm-btn" data-vmid="${vm.vmid}" data-vm-action="reboot" data-vm-name="${vm.name}" style="background: rgba(255,183,0,0.15); border-color: #ffb700; color: #ffb700;">
-                    ⟳ REINICIAR
+                  <button class="entity-btn action-vm-btn btn-hold-critical" data-vmid="${vm.vmid}" data-vm-action="reboot" data-vm-name="${vm.name}" data-critical="true" style="background: rgba(255,183,0,0.15); border-color: #ffb700; color: #ffb700;" title="Mantenha premido 1.5s para reiniciar">
+                    <span>⟳ REINICIAR (HOLD)</span>
                   </button>
                 `}
               </div>
@@ -1092,20 +1514,28 @@ export class UiOverlayManager {
       </div>
     `;
 
-    // Interatividade com ações de VM
+    // Interatividade com ações de VM protegidas por Hold-to-Confirm
     this.mainPanel.querySelectorAll('.action-vm-btn').forEach(btn => {
-      btn.addEventListener('click', (ev) => {
-        const target = ev.target as HTMLButtonElement;
-        const vmid = parseInt(target.getAttribute('data-vmid') || '0', 10);
-        const action = target.getAttribute('data-vm-action') || '';
-        const vmName = target.getAttribute('data-vm-name') || '';
+      const isCritical = btn.getAttribute('data-critical') === 'true';
+      const vmid = parseInt(btn.getAttribute('data-vmid') || '0', 10);
+      const action = btn.getAttribute('data-vm-action') || '';
+      const vmName = btn.getAttribute('data-vm-name') || '';
 
+      const dispatchAction = () => {
         const customEvent = new CustomEvent('jarvis-action-vm', {
-          detail: { vmid, action, vmName }
+          detail: { vmid, action, vmName, confirmed: true }
         });
         window.dispatchEvent(customEvent);
-      });
+      };
+
+      if (isCritical) {
+        this.attachHoldToConfirm(btn as HTMLElement, dispatchAction, 1500);
+      } else {
+        btn.addEventListener('click', dispatchAction);
+      }
     });
+
+    this.drawSparkline('canvas-sparkline-cpu', this.trends.cpu, '#00e5ff');
   }
 
   private renderNetwork() {
@@ -1155,6 +1585,14 @@ export class UiOverlayManager {
                   ↑ ${(ow.wan_upload_mbps || 0).toFixed(2)} <span style="font-size: 0.65rem;">Mbps</span>
                 </div>
               </div>
+            </div>
+
+            <div class="sparkline-box">
+              <div class="sparkline-header">
+                <span>HISTÓRICO WAN DOWNLOAD (Mbps)</span>
+                <span style="color: #00ff9d;">↓ ${(ow.wan_download_mbps || 0).toFixed(1)} Mbps</span>
+              </div>
+              <canvas id="canvas-sparkline-wan" class="sparkline-canvas" width="300" height="40"></canvas>
             </div>
 
             <div class="data-row">
@@ -1281,6 +1719,8 @@ export class UiOverlayManager {
         </div>
       </div>
     `;
+
+    this.drawSparkline('canvas-sparkline-wan', this.trends.wan_rx, '#00ff9d');
   }
 
   private renderServices() {
@@ -1473,6 +1913,109 @@ export class UiOverlayManager {
       btn.addEventListener('click', () => {
         soundFX.playClick();
         window.dispatchEvent(new CustomEvent('jarvis-run-diagnostics'));
+      });
+    }
+  }
+
+  private renderDocker() {
+    const isConfigured = Boolean(this.dockerData && this.dockerData.configured);
+    const isReal = isConfigured && this.dockerData!.status === 'operational';
+    const containers = isReal ? this.dockerData!.containers : [];
+
+    this.mainPanel.innerHTML = `
+      <div class="panel-card">
+        <div class="panel-title">
+          <span>CONTENTORES // DOCKER & COSMOS CLOUD</span>
+          <span class="badge-demo" style="${isReal ? 'color: var(--color-success); border-color: var(--color-success); background: rgba(0, 255, 157, 0.1);' : ''}">
+            ${isReal ? 'DOCKER REAL' : 'SEM SOCKET'}
+          </span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; background: rgba(0, 229, 255, 0.05); padding: 8px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15);">
+          <div>
+            <div style="font-size: 0.65rem; color: var(--color-text-dim);">TOTAL CONTENTORES</div>
+            <div style="font-weight: bold; color: #fff; font-size: 1.05rem; font-family: monospace;">
+              ${isReal ? this.dockerData!.total_containers : 0}
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 0.65rem; color: var(--color-text-dim);">EM EXECUÇÃO (UP)</div>
+            <div style="font-weight: bold; color: #00ff9d; font-size: 1.05rem; font-family: monospace;">
+              ${isReal ? this.dockerData!.running_containers : 0} ativos
+            </div>
+          </div>
+        </div>
+
+        ${!isReal ? `
+          <div style="font-size: 0.78rem; color: var(--color-text-dim); line-height: 1.5; padding: 12px; background: rgba(0, 229, 255, 0.05); border: 1px dashed rgba(0, 229, 255, 0.2); border-radius: 4px;">
+            💡 <strong>Telemetria de Contentores:</strong> Monte o volume <code>/var/run/docker.sock:/var/run/docker.sock:ro</code> no compose para ler o estado de cada container em tempo real.
+          </div>
+        ` : `
+          <div style="display: flex; flex-direction: column; gap: 6px; max-height: 460px; overflow-y: auto;">
+            ${containers.map(c => `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: rgba(5,11,20,0.6); border-radius: 4px; border-left: 3px solid ${c.state === 'running' ? '#00ff9d' : '#ff3366'};">
+                <div>
+                  <div style="font-weight: bold; color: #fff; font-size: 0.82rem;">${c.name}</div>
+                  <div style="font-size: 0.65rem; color: var(--color-text-dim); font-family: monospace;">
+                    ${c.image} • <span style="color: #7da5c2;">${c.uptime}</span>
+                  </div>
+                </div>
+                <span style="font-size: 0.7rem; font-weight: bold; color: ${c.state === 'running' ? '#00ff9d' : '#ff3366'}; background: ${c.state === 'running' ? 'rgba(0,255,157,0.1)' : 'rgba(255,51,102,0.1)'}; padding: 3px 6px; border-radius: 3px;">
+                  ${c.state.toUpperCase()}
+                </span>
+              </div>
+            `).join('')}
+          </div>
+        `}
+      </div>
+    `;
+  }
+
+  private renderAudit() {
+    this.mainPanel.innerHTML = `
+      <div class="panel-card">
+        <div class="panel-title">
+          <span>SEGURANÇA // CONSOLA DE AUDITORIA DE AÇÕES</span>
+          <button class="action-btn" id="btn-refresh-audit" style="padding: 4px 10px; font-size: 0.7rem;">⟳ ATUALIZAR</button>
+        </div>
+        <p class="data-label" style="margin-bottom: 12px; font-size: 0.75rem;">
+          Registo cronológico de operações executadas (Comandos, Ações Home Assistant, Proxmox e PIN):
+        </p>
+
+        ${this.auditLogs.length === 0 ? `
+          <div style="font-size: 0.78rem; color: var(--color-text-dim); padding: 16px; text-align: center;">Nenhum evento registado na sessão atual.</div>
+        ` : `
+          <div style="display: flex; flex-direction: column; gap: 5px; max-height: 480px; overflow-y: auto;">
+            ${this.auditLogs.map(l => {
+              const time = new Date(l.timestamp).toLocaleTimeString();
+              const isAlert = l.event_type.includes('ALERT') || l.event_type.includes('FAILED');
+              const isVm = l.event_type.includes('VM');
+              const badgeColor = isAlert ? '#ff3366' : isVm ? '#b388ff' : '#00ff9d';
+              return `
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; padding: 6px 10px; background: rgba(5,11,20,0.7); border-radius: 4px; border-left: 3px solid ${badgeColor}; font-size: 0.72rem;">
+                  <div>
+                    <div style="font-weight: bold; color: #fff;">
+                      <span style="color: ${badgeColor};">[${l.event_type}]</span> ${l.target} ➔ ${l.action}
+                    </div>
+                    ${l.details ? `<div style="font-size: 0.65rem; color: var(--color-text-dim); margin-top: 2px;">${l.details}</div>` : ''}
+                  </div>
+                  <div style="text-align: right; color: #7da5c2; font-family: monospace; font-size: 0.65rem; white-space: nowrap; margin-left: 8px;">
+                    ${time} • <small>${l.actor}</small>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `}
+      </div>
+    `;
+
+    const btnRefresh = document.getElementById('btn-refresh-audit');
+    if (btnRefresh) {
+      btnRefresh.addEventListener('click', async () => {
+        soundFX.playClick();
+        this.auditLogs = await api.getAuditLogs(50);
+        this.renderAudit();
       });
     }
   }

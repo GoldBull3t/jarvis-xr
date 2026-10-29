@@ -26,6 +26,20 @@ class Settings(BaseSettings):
         description="Chave pre-shared para autenticação Bearer token (defina como 'none' para desativar)"
     )
     
+    # Segurança de Acesso ao Cockpit (PIN Numérico Virtual & Auto-lock)
+    JARVIS_PIN_REQUIRED: bool = Field(
+        default=True,
+        description="Exige introdução de PIN numérico no ecrã de bloqueio 3D/2D para aceder ao cockpit"
+    )
+    JARVIS_ACCESS_PIN: str = Field(
+        default="1234",
+        description="Código PIN numérico de 4 dígitos para desbloquear o cockpit (predefinição: 1234)"
+    )
+    JARVIS_AUTO_LOCK_MINUTES: int = Field(
+        default=5,
+        description="Minutos de inatividade até bloquear automaticamente o cockpit"
+    )
+    
     # Domínio / Proxy (opcional, flexível para qualquer domínio ou reverse proxy como Cosmos)
     JARVIS_DOMAIN: Optional[str] = None
     JARVIS_CORS_ORIGINS: str = "*"
@@ -77,6 +91,11 @@ class Settings(BaseSettings):
     OPENWRT_TIMEOUT_SECONDS: int = 5
     OPENWRT_VERIFY_SSL: bool = False
     OPENWRT_WAN_INTERFACE: str = "wan"
+
+    # Integração Docker / Contentores Cosmos
+    DOCKER_ENABLED: bool = True
+    DOCKER_SOCKET_PATH: str = "/var/run/docker.sock"
+    DOCKER_URL: Optional[str] = None  # opcional, ex: "http://192.168.30.237:2375" se exposto
 
     # Allowlist de Serviços do Homelab para Healthcheck
     HOMELAB_SERVICES: str = "[]"

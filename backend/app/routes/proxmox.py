@@ -8,6 +8,7 @@ from app.schemas import (
     ActionExecutionResult
 )
 from app.integrations.proxmox import proxmox_adapter
+from app.services.audit import audit_logger
 
 router = APIRouter(prefix="/proxmox", tags=["Proxmox VE"])
 
@@ -57,6 +58,15 @@ async def action_proxmox_vm(
         vmid=req.vmid,
         action=req.action,
         confirmed=req.confirmed
+    )
+
+    audit_logger.log(
+        event_type="VM_ACTION",
+        target=f"VM {req.vmid}",
+        action=req.action.upper(),
+        actor="webxr_controller",
+        confirmed=req.confirmed,
+        details=result.message if result.success else f"Falha: {result.message}"
     )
 
     if not result.success:

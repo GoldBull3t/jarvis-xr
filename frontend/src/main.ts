@@ -19,7 +19,9 @@ import type {
   DnsSummaryData,
   OpenWrtSummaryData,
   ServiceHealthItem,
-  FullDiagnosticsData
+  FullDiagnosticsData,
+  DockerSummaryData,
+  AuditLogItem
 } from './types';
 
 class JarvisApp {
@@ -44,6 +46,9 @@ class JarvisApp {
   public openwrtData: OpenWrtSummaryData | null = null;
   public servicesData: ServiceHealthItem[] | null = null;
   public diagnosticsData: FullDiagnosticsData | null = null;
+  public dockerData: DockerSummaryData | null = null;
+  public auditLogs: AuditLogItem[] = [];
+  public favoriteEntityIds: string[] = [];
   public commands: JarvisCommand[] = [];
 
   // Pilar 3: Canal SSE de tempo real
@@ -296,6 +301,23 @@ class JarvisApp {
       await this.loadDiagnostics();
     }) as EventListener);
 
+    // Escuta eventos de bloqueio e segurança do Cockpit por PIN
+    window.addEventListener('jarvis-open-pin-modal', (() => {
+      this.uiOverlay.lockCockpit();
+    }) as EventListener);
+
+    window.addEventListener('jarvis-cockpit-locked', ((e: any) => {
+      const locked = Boolean(e.detail?.locked);
+      this.spatialPanels.setLocked(locked);
+    }) as EventListener);
+
+    // Escuta evento de atualização de dispositivos fixados (Favoritos)
+    window.addEventListener('jarvis-favorites-updated', ((e: any) => {
+      const favs = e.detail?.favorites || [];
+      this.favoriteEntityIds = favs;
+      this.spatialPanels.setFavorites(favs);
+    }) as EventListener);
+
     // Escuta erro 401 de autenticação do backend
     window.addEventListener('jarvis-auth-error', (() => {
       this.uiOverlay.setConnectionState('error');
@@ -402,14 +424,18 @@ class JarvisApp {
       await api.getHealth();
       this.uiOverlay.setConnectionState('online');
 
-      const [demoRes, cmds, homeRes, pveRes, dnsRes, servicesRes, openwrtRes] = await Promise.all([
+      const [demoRes, cmds, homeRes, pveRes, dnsRes, servicesRes, openwrtRes, dockerRes, favRes, pinRes, auditRes] = await Promise.all([
         api.getDemoStatus().catch(() => null),
         api.getCommands().catch(() => []),
         api.getHomeSummary().catch((e) => { console.warn('Falha Home Assistant:', e); return null; }),
         api.getProxmoxSummary().catch((e) => { console.warn('Falha Proxmox:', e); return null; }),
         api.getDnsSummary().catch(() => null),
         api.getServices().catch(() => null),
-        api.getOpenWrtSummary().catch(() => null)
+        api.getOpenWrtSummary().catch(() => null),
+        api.getDockerSummary().catch(() => null),
+        api.getFavorites().catch(() => []),
+        api.getPinStatus().catch(() => null),
+        api.getAuditLogs(50).catch(() => [])
       ]);
 
       const demo: DemoStatusData = demoRes || {
@@ -452,6 +478,9 @@ class JarvisApp {
       this.dnsData = dnsRes;
       this.openwrtData = openwrtRes;
       this.servicesData = servicesRes;
+      this.dockerData = dockerRes;
+      this.favoriteEntityIds = favRes || [];
+      this.auditLogs = auditRes || [];
 
       // Auto-deteta câmara se disponível no Home Assistant
       if (homeRes && homeRes.authorized_entities) {
@@ -459,7 +488,23 @@ class JarvisApp {
         if (cam) this.activeCameraEntityId = cam.entity_id;
       }
 
-      this.uiOverlay.updateData(demo, cmds, homeRes, pveRes, dnsRes, servicesRes, this.diagnosticsData, openwrtRes);
+      this.uiOverlay.initPinStatus(pinRes);
+      this.uiOverlay.setFavorites(this.favoriteEntityIds);
+      this.spatialPanels.setFavorites(this.favoriteEntityIds);
+      this.spatialPanels.setLocked(Boolean(pinRes && pinRes.pin_required && pinRes.is_locked));
+
+      this.uiOverlay.updateData(
+        demo,
+        cmds,
+        homeRes,
+        pveRes,
+        dnsRes,
+        servicesRes,
+        this.diagnosticsData,
+        openwrtRes,
+        dockerRes,
+        auditRes
+      );
       this.updateSpatialPanelsData(demo, homeRes, pveRes, dnsRes);
 
       // Inicia o canal SSE em tempo real (Pilar 3) e o diagnóstico em background (Pilar 4)
@@ -514,6 +559,11 @@ class JarvisApp {
             hasUpdates = true;
           }
 
+          if (payload.docker) {
+            this.dockerData = payload.docker;
+            hasUpdates = true;
+          }
+
           if (hasUpdates && this.demoData) {
             this.uiOverlay.updateData(
               this.demoData,
@@ -523,7 +573,9 @@ class JarvisApp {
               this.dnsData,
               this.servicesData,
               this.diagnosticsData,
-              this.openwrtData
+              this.openwrtData,
+              this.dockerData,
+              this.auditLogs
             );
             this.updateSpatialPanelsData(this.demoData, this.homeData, this.pveData, this.dnsData);
           }
@@ -581,7 +633,9 @@ class JarvisApp {
           this.dnsData,
           this.servicesData,
           this.diagnosticsData,
-          this.openwrtData
+          this.openwrtData,
+          this.dockerData,
+          this.auditLogs
         );
       }
       if (!silent) {

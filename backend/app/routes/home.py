@@ -20,6 +20,7 @@ from app.schemas import (
     PresenceUpdateRequest
 )
 from app.integrations.homeassistant import ha_adapter
+from app.services.audit import audit_logger
 
 router = APIRouter(prefix="/home", tags=["Home Assistant"])
 
@@ -318,6 +319,16 @@ async def action_generic(
         service=req.service,
         service_data=req.service_data
     )
+
+    audit_logger.log(
+        event_type="HA_ACTION",
+        target=req.entity_id,
+        action=f"{req.domain}.{req.service}".upper(),
+        actor="webxr_controller",
+        confirmed=True,
+        details=result.message if result.success else f"Falha: {result.message}"
+    )
+
     if not result.success:
         return APIResponse(status="error", error=result.message, data=result)
     return APIResponse(status="ok", data=result)

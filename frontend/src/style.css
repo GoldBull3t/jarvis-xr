@@ -480,3 +480,129 @@ html, body {
   padding: 18px;
 }
 
+/* ==============================================================================
+   SEGURANÇA & PIN NUMÉRICO VIRTUAL (COCKPIT LOCK)
+   ============================================================================== */
+.pin-display {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.pin-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--color-primary-cyan);
+  background: transparent;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.pin-dot.filled {
+  background: var(--color-primary-cyan);
+  box-shadow: 0 0 15px var(--color-primary-cyan);
+  transform: scale(1.15);
+}
+
+.pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  max-width: 280px;
+  margin: 0 auto;
+}
+
+.pin-key-btn {
+  background: rgba(0, 229, 255, 0.08);
+  border: 1px solid rgba(0, 229, 255, 0.3);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 1.3rem;
+  font-weight: 700;
+  padding: 14px 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.pin-key-btn:hover {
+  background: rgba(0, 229, 255, 0.25);
+  border-color: var(--color-primary-cyan);
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+}
+
+.pin-key-btn:active {
+  transform: scale(0.95);
+  background: var(--color-primary-cyan);
+  color: #000;
+}
+
+.pin-key-btn.action-clear {
+  color: var(--color-danger);
+  border-color: rgba(255, 51, 102, 0.4);
+  background: rgba(255, 51, 102, 0.08);
+  font-size: 0.95rem;
+}
+
+.pin-key-btn.action-unlock {
+  color: var(--color-success);
+  border-color: rgba(0, 255, 157, 0.4);
+  background: rgba(0, 255, 157, 0.08);
+  font-size: 0.95rem;
+}
+
+/* ==============================================================================
+   HOLD-TO-CONFIRM (AÇÕES CRÍTICAS)
+   ============================================================================== */
+.btn-hold-critical {
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+}
+
+.btn-hold-critical::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: var(--hold-progress, 0%);
+  background: rgba(255, 51, 102, 0.45);
+  pointer-events: none;
+  transition: width 0.05s linear;
+  z-index: 0;
+}
+
+.btn-hold-critical > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ==============================================================================
+   MINI GRÁFICOS SPARKLINES & TELEMETRIA AVANÇADA
+   ============================================================================== */
+.sparkline-box {
+  background: rgba(5, 11, 20, 0.6);
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-top: 8px;
+}
+
+.sparkline-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--color-text-dim);
+  margin-bottom: 4px;
+}
+
+.sparkline-canvas {
+  width: 100%;
+  height: 38px;
+  display: block;
+}
+
+

@@ -24,6 +24,11 @@ services:
       - JARVIS_AUTH_ENABLED=false
       - JARVIS_API_KEY=wcSyhFb3mGYv0QbFkMippRFOgoBaxraNIHRkDQqiK0M
 
+      # --- Segurança da Aplicação (PIN Virtual 3D & Auto-Lock) ---
+      - JARVIS_PIN_REQUIRED=true
+      - JARVIS_ACCESS_PIN=1234
+      - JARVIS_AUTO_LOCK_MINUTES=5
+
       # Domínio e CORS (flexível para deteção dinâmica no Cosmos Cloud):
       - JARVIS_DOMAIN=
       - JARVIS_CORS_ORIGINS=*
@@ -72,10 +77,17 @@ services:
       - OPENWRT_PASSWORD=
       - OPENWRT_WAN_INTERFACE=wan
 
+      # --- Integração Docker / Cosmos Containers Telemetry ---
+      - DOCKER_ENABLED=true
+      - DOCKER_SOCKET_PATH=/var/run/docker.sock
+
       # --- Allowlist Opcional de Serviços HTTP a Monitorizar ---
       # Se deixar "[]", o backend auto-deteta e monitoriza o Proxmox e o Home Assistant reais
       - HOMELAB_SERVICES=[]
     
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
     # Resolução DNS e mapeamento de hosts locais do Homelab
     dns:
       - 192.168.10.1

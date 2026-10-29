@@ -45,6 +45,10 @@ caddy_config/
 *.key
 *.pem
 
+# Runtime data
+backend/data/*.json
+data/*.json
+
 # IDEs
 .vscode/
 .idea/

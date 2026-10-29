@@ -24,7 +24,10 @@ import type {
   DnsSummaryData,
   OpenWrtSummaryData,
   ServiceHealthItem,
-  FullDiagnosticsData
+  FullDiagnosticsData,
+  PinStatusData,
+  DockerSummaryData,
+  AuditLogItem
 } from '../types';
 
 export class JarvisApiClient {
@@ -373,6 +376,75 @@ export class JarvisApiClient {
       method: 'POST',
       body: JSON.stringify(params)
     });
+  }
+
+  /**
+   * Obtém o estado do PIN de acesso e definições de bloqueio
+   */
+  public async getPinStatus(): Promise<PinStatusData> {
+    return this.request<PinStatusData>('/auth/pin-status');
+  }
+
+  /**
+   * Valida o PIN numérico introduzido no teclado virtual 3D ou 2D
+   */
+  public async verifyPin(pin: string): Promise<boolean> {
+    try {
+      const res = await this.request<{ valid: boolean }>('/auth/verify-pin', {
+        method: 'POST',
+        body: JSON.stringify({ pin })
+      });
+      return Boolean(res && res.valid);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Obtém a lista de entidades fixadas (favoritos) no HUD
+   */
+  public async getFavorites(): Promise<string[]> {
+    try {
+      const res = await this.request<{ entity_ids: string[] }>('/home/favorites');
+      return res.entity_ids || [];
+    } catch {
+      const saved = localStorage.getItem('jarvis_hud_favorites');
+      return saved ? JSON.parse(saved) : [];
+    }
+  }
+
+  /**
+   * Guarda a lista de entidades fixadas no HUD
+   */
+  public async saveFavorites(entityIds: string[]): Promise<string[]> {
+    try {
+      localStorage.setItem('jarvis_hud_favorites', JSON.stringify(entityIds));
+      const res = await this.request<{ entity_ids: string[] }>('/home/favorites', {
+        method: 'POST',
+        body: JSON.stringify({ entity_ids: entityIds })
+      });
+      return res.entity_ids;
+    } catch {
+      return entityIds;
+    }
+  }
+
+  /**
+   * Obtém os registos recentes de auditoria e segurança
+   */
+  public async getAuditLogs(limit: number = 50): Promise<AuditLogItem[]> {
+    try {
+      return await this.request<AuditLogItem[]>(`/audit/logs?limit=${limit}`);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Obtém telemetria de contentores Docker e Cosmos
+   */
+  public async getDockerSummary(): Promise<DockerSummaryData> {
+    return this.request<DockerSummaryData>('/docker/containers');
   }
 }
 

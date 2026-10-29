@@ -78,8 +78,12 @@ export class SpatialPanelManager3D {
   private isFocusCollapsed: boolean = false;
   private preFocusPositions: Map<string, THREE.Vector3> = new Map();
 
+  // Estado de Bloqueio de Segurança por PIN e Favoritos
+  private isLocked: boolean = false;
+  private favoriteEntityIds: string[] = [];
+
   // Abas e Paginação Tática para Informação Máxima e 100% Real
-  private homeActiveTab: 'devices' | 'climate' | 'security' | 'scenes' = 'devices';
+  private homeActiveTab: 'favorites' | 'devices' | 'climate' | 'security' | 'scenes' = 'favorites';
   private homePage: number = 0;
   private pveActiveTab: 'vms' | 'nodes' | 'storage' | 'backup' = 'vms';
   private pvePage: number = 0;
@@ -88,6 +92,17 @@ export class SpatialPanelManager3D {
 
   // Callback para ações acionadas via laser/toque no ar
   public onPanelAction?: (action: string, panelId: string, data?: any) => void;
+
+  public setLocked(locked: boolean) {
+    this.isLocked = locked;
+    this.panels.forEach((p) => this.renderPanel(p));
+  }
+
+  public setFavorites(favs: string[]) {
+    this.favoriteEntityIds = favs;
+    const p = this.panels.get('home');
+    if (p) this.renderPanel(p);
+  }
 
   constructor() {
     this.group = new THREE.Group();
@@ -369,6 +384,26 @@ export class SpatialPanelManager3D {
     panel.buttons = [closeBtn];
     this.drawHoloButton(ctx, closeBtn, highlightButtonId === closeBtn.id, '#ff3366');
 
+    // 5.1 Se o Cockpit estiver bloqueado por PIN de segurança
+    if (this.isLocked) {
+      if (panel.id === 'home') {
+        this.drawLockScreen(ctx, panel, highlightButtonId);
+      } else {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+        ctx.fillRect(6, 76, w - 12, h - 82);
+        ctx.fillStyle = 'rgba(255, 51, 102, 0.7)';
+        ctx.font = 'bold 26px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('🔒 COCKPIT BLOQUEADO', w / 2, h / 2);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.font = '16px monospace';
+        ctx.fillText('Desbloqueie no painel central com o seu PIN.', w / 2, h / 2 + 40);
+        ctx.textAlign = 'left';
+      }
+      panel.texture.needsUpdate = true;
+      return;
+    }
+
     // 6. Desenho especializado do corpo do painel
     if (panel.id === 'home') {
       this.drawHomeContent(ctx, panel, highlightButtonId);
@@ -489,16 +524,19 @@ export class SpatialPanelManager3D {
     }
 
     // 2. Abas Táticas de Navegação
-    const homeTabs = [
-      { id: 'devices', label: '💡 DISPOSITIVOS & LUZES' },
-      { id: 'climate', label: '🌡️ AMBIENTE & CLIMA' },
-      { id: 'security', label: '🚪 SEGURANÇA & DIVISÕES' },
-      { id: 'scenes', label: '⚡ CENAS & MACROS' }
+    const homeTabs: Array<{ id: 'favorites' | 'devices' | 'climate' | 'security' | 'scenes'; label: string }> = [
+      { id: 'favorites', label: `⭐ FIXADOS (${this.favoriteEntityIds.length})` },
+      { id: 'devices', label: '💡 DISPOSITIVOS' },
+      { id: 'climate', label: '🌡️ AMBIENTE' },
+      { id: 'security', label: '🚪 SEGURANÇA' },
+      { id: 'scenes', label: '⚡ CENAS' }
     ];
     this.drawTabBar(ctx, 24, 126, 976, 38, homeTabs, this.homeActiveTab, 'tab_home', panel);
 
     // 3. Conteúdo por Aba
-    if (this.homeActiveTab === 'devices') {
+    if (this.homeActiveTab === 'favorites') {
+      this.drawHomeFavoritesTab(ctx, panel, highlightId);
+    } else if (this.homeActiveTab === 'devices') {
       this.drawHomeDevicesTab(ctx, panel, highlightId);
     } else if (this.homeActiveTab === 'climate') {
       this.drawHomeClimateTab(ctx, panel, highlightId);
@@ -506,6 +544,152 @@ export class SpatialPanelManager3D {
       this.drawHomeSecurityTab(ctx, panel);
     } else if (this.homeActiveTab === 'scenes') {
       this.drawHomeScenesTab(ctx, panel, highlightId);
+    }
+  }
+
+  private drawLockScreen(ctx: CanvasRenderingContext2D, panel: FloatingPanel3D, highlightId?: string) {
+    const w = 1024;
+    const h = 680;
+
+    ctx.fillStyle = 'rgba(4, 10, 20, 0.95)';
+    ctx.fillRect(6, 76, w - 12, h - 82);
+    ctx.strokeStyle = '#ff3366';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(6, 76, w - 12, h - 82);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff3366';
+    ctx.font = 'bold 32px monospace';
+    ctx.fillText('🔒 COCKPIT JARVIS BLOQUEADO', w / 2, 210);
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+    ctx.font = '16px monospace';
+    ctx.fillText('Acesso restrito para proteção de operações críticas e domótica.', w / 2, 260);
+
+    ctx.fillStyle = '#00e5ff';
+    ctx.font = '14px monospace';
+    ctx.fillText('PIN predefinido: 1234 (Auto-bloqueio após inatividade)', w / 2, 300);
+
+    const unlockBtn: PanelButtonArea = {
+      id: 'btn-3d-open-pin',
+      x: w / 2 - 190,
+      y: 380,
+      width: 380,
+      height: 60,
+      label: '🔓 ABRIR TECLADO PIN DE ACESSO',
+      action: 'open_pin_modal'
+    };
+    panel.buttons.push(unlockBtn);
+    this.drawHoloButton(ctx, unlockBtn, highlightId === unlockBtn.id, '#00e5ff');
+
+    ctx.textAlign = 'left';
+  }
+
+  private drawHomeFavoritesTab(ctx: CanvasRenderingContext2D, panel: FloatingPanel3D, highlightId?: string) {
+    const home = this.telemetry.home;
+    const allEntities = home?.authorized_entities || [];
+    const favorites = allEntities.filter(e => this.favoriteEntityIds.includes(e.entity_id));
+
+    if (favorites.length === 0) {
+      ctx.fillStyle = 'rgba(0, 15, 30, 0.7)';
+      ctx.fillRect(24, 176, 976, 420);
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.2)';
+      ctx.strokeRect(24, 176, 976, 420);
+
+      ctx.fillStyle = '#00e5ff';
+      ctx.font = 'bold 18px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('NENHUM DISPOSITIVO FIXADO NO HUD.', 512, 360);
+      ctx.font = '14px monospace';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      ctx.fillText('Utilize o botão "➕ ADICIONAR AO HUD" na interface 2D para fixar dispositivos aos favoritos!', 512, 400);
+      ctx.textAlign = 'left';
+      return;
+    }
+
+    const pageSize = 4;
+    const totalPages = Math.max(1, Math.ceil(favorites.length / pageSize));
+    if (this.homePage >= totalPages) this.homePage = totalPages - 1;
+    const startIdx = this.homePage * pageSize;
+    const currentFavorites = favorites.slice(startIdx, startIdx + pageSize);
+
+    let curY = 176;
+    currentFavorites.forEach((ent) => {
+      const isOn = ent.state === 'on' || ent.state === 'open' || ent.state === 'playing';
+
+      ctx.fillStyle = 'rgba(0, 18, 38, 0.7)';
+      ctx.fillRect(24, curY, 976, 80);
+      ctx.strokeStyle = isOn ? 'rgba(0, 229, 255, 0.35)' : 'rgba(255, 255, 255, 0.15)';
+      ctx.strokeRect(24, curY, 976, 80);
+
+      ctx.beginPath();
+      ctx.arc(56, curY + 40, 12, 0, Math.PI * 2);
+      ctx.fillStyle = isOn ? '#ffb700' : 'rgba(255, 255, 255, 0.2)';
+      ctx.shadowColor = isOn ? '#ffb700' : 'transparent';
+      ctx.shadowBlur = isOn ? 14 : 0;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 17px monospace';
+      ctx.fillText(`⭐ ${ent.friendly_name}`, 86, curY + 36);
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      ctx.font = '13px monospace';
+      const area = ent.area_name ? `📍 ${ent.area_name}` : ent.domain.toUpperCase();
+      ctx.fillText(`${ent.entity_id} • ${area}`, 86, curY + 58);
+
+      const toggleBtn: PanelButtonArea = {
+        id: `btn-fav-toggle-${ent.entity_id}`,
+        x: 840,
+        y: curY + 16,
+        width: 140,
+        height: 48,
+        label: isOn ? 'DESLIGAR' : 'LIGAR',
+        action: 'ha_action',
+        data: { entityId: ent.entity_id, domain: ent.domain, action: 'toggle' }
+      };
+      panel.buttons.push(toggleBtn);
+      this.drawHoloButton(ctx, toggleBtn, highlightId === toggleBtn.id, isOn ? '#ffb700' : '#00e5ff');
+
+      curY += 88;
+    });
+
+    if (totalPages > 1) {
+      const footY = 538;
+      if (this.homePage > 0) {
+        const btnPrev: PanelButtonArea = {
+          id: 'btn-fav-prev',
+          x: 24,
+          y: footY,
+          width: 140,
+          height: 44,
+          label: '◀ ANTERIOR',
+          action: 'home_prev'
+        };
+        panel.buttons.push(btnPrev);
+        this.drawHoloButton(ctx, btnPrev, highlightId === btnPrev.id);
+      }
+
+      ctx.fillStyle = '#ffb700';
+      ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`DISPOSITIVOS FIXADOS: ${favorites.length} • PÁGINA ${this.homePage + 1} DE ${totalPages}`, 512, footY + 28);
+      ctx.textAlign = 'left';
+
+      if (this.homePage < totalPages - 1) {
+        const btnNext: PanelButtonArea = {
+          id: 'btn-fav-next',
+          x: 860,
+          y: footY,
+          width: 140,
+          height: 44,
+          label: 'SEGUINTE ▶',
+          action: 'home_next'
+        };
+        panel.buttons.push(btnNext);
+        this.drawHoloButton(ctx, btnNext, highlightId === btnNext.id);
+      }
     }
   }
 
@@ -1975,6 +2159,8 @@ export class SpatialPanelManager3D {
         if (btn.action === 'close_panel') {
           this.setVisible(panelId, false);
           this.saveCurrentLayout();
+        } else if (btn.action === 'open_pin_modal') {
+          window.dispatchEvent(new CustomEvent('jarvis-open-pin-modal'));
         } else if (btn.action === 'toggle_focus_mode') {
           this.toggleFocusMode();
         } else if (btn.action === 'toggle_panel_home') {

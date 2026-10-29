@@ -353,4 +353,49 @@ export interface FullDiagnosticsData {
   };
 }
 
+export interface PinStatusData {
+  pin_required: boolean;
+  auto_lock_minutes: number;
+  is_locked: boolean;
+}
+
+export interface ContainerStats {
+  id: string;
+  name: string;
+  image: string;
+  status: string;
+  state: string;
+  cpu_percent?: number;
+  ram_used_mb?: number;
+  uptime?: string;
+}
+
+export interface DockerSummaryData {
+  configured: boolean;
+  status: 'operational' | 'disabled' | 'unreachable' | 'error';
+  total_containers: number;
+  running_containers: number;
+  containers: ContainerStats[];
+  message?: string;
+}
+
+export interface AuditLogItem {
+  id: string;
+  timestamp: string;
+  event_type: string;
+  target: string;
+  action: string;
+  actor: string;
+  confirmed: boolean;
+  details?: string | null;
+}
+
+export interface TrendHistory {
+  wan_rx: number[];
+  wan_tx: number[];
+  cpu: number[];
+  temp: number[];
+}
+
+
 

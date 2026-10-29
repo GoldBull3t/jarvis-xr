@@ -362,3 +362,56 @@ class FullDiagnosticsData(BaseModel):
     checks: List[DiagnosticCheckItem]
     system_info: Dict[str, Any]
 
+
+# --- SCHEMAS DE SEGURANÇA, PIN E AUDITORIA ---
+
+class PinVerifyRequest(BaseModel):
+    pin: str = Field(description="Código PIN numérico para desbloqueio do cockpit")
+
+
+class PinStatusResponse(BaseModel):
+    pin_required: bool
+    auto_lock_minutes: int
+    is_locked: bool = True
+
+
+class FavoritesRequest(BaseModel):
+    entity_ids: List[str] = Field(description="Lista de IDs de entidades fixadas no HUD")
+
+
+class FavoritesResponse(BaseModel):
+    entity_ids: List[str]
+
+
+class ContainerStats(BaseModel):
+    id: str
+    name: str
+    image: str
+    status: str
+    state: str  # "running", "exited", "restarting"
+    cpu_percent: float = 0.0
+    ram_used_mb: float = 0.0
+    ram_limit_mb: float = 0.0
+    uptime: str = ""
+
+
+class DockerSummaryData(BaseModel):
+    configured: bool
+    status: str  # "operational", "disabled", "error"
+    total_containers: int = 0
+    running_containers: int = 0
+    containers: List[ContainerStats] = Field(default_factory=list)
+    message: Optional[str] = None
+
+
+class AuditLogItem(BaseModel):
+    id: str
+    timestamp: datetime
+    event_type: str
+    target: str
+    action: str
+    actor: str
+    confirmed: bool
+    details: Optional[str] = None
+
+
