@@ -44,3 +44,4 @@ class JarvisXRPresenceSensor(BinarySensorEntity):
         self.async_on_remove(
             self.hass.bus.async_listen("jarvis_xr_presence", handle_presence_event)
         )
+

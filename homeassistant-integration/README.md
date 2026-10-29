@@ -42,3 +42,4 @@ Se preferir não instalar nenhum componente personalizado no Home Assistant, o J
 2. Crie uma etiqueta chamada **`jarvis`**.
 3. Atribua esta etiqueta a qualquer luz, tomada ou sensor que pretenda ver no headset.
 4. O JARVIS deteta-as automaticamente em tempo real!
+
