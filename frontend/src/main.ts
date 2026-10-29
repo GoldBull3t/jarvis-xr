@@ -85,6 +85,8 @@ class JarvisApp {
     this.coreVisualizer = new JarvisCoreVisualizer();
     this.coreVisualizer.group.scale.set(0.35, 0.35, 0.35);
     this.coreVisualizer.group.position.set(0, -0.05, -1.6);
+    // Question 8: Arc Reactor desativado no centro do campo de visão para Passthrough limpo na sala real
+    this.coreVisualizer.group.visible = false;
     this.scene.add(this.coreVisualizer.group);
 
     this.spatialPanels = new SpatialPanelManager3D();
