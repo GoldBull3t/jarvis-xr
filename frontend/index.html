@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>JARVIS XR — Homelab Command Center</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='none' stroke='%2300e5ff' stroke-width='6'/><circle cx='50' cy='50' r='20' fill='%2300e5ff'/></svg>" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- Canvas 3D para Three.js / WebXR -->
+    <div id="canvas-container"></div>
+
+    <!-- Interface HUD Overlay 2D (Modo Desktop / Apoio XR) -->
+    <div id="ui-overlay">
+      <!-- Cabeçalho de Estado -->
+      <header class="hud-header">
+        <div class="hud-brand">
+          <div class="status-pulse-dot" id="system-status-indicator"></div>
+          <span class="brand-title">JARVIS <span class="brand-xr">XR</span></span>
+          <span class="badge badge-demo">[FASE 2: DEMO MODE]</span>
+        </div>
+        <div class="hud-stats">
+          <div class="stat-pill">
+            <span class="stat-label">LIGAÇÃO:</span>
+            <span class="stat-val" id="conn-status">A VERIFICAR...</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-label">MODO:</span>
+            <span class="stat-val" id="xr-mode-status">DESKTOP</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-label">VOZ:</span>
+            <span class="stat-val" id="voice-status">PRONTO</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Painel Principal de Controlo e Navegação -->
+      <nav class="hud-nav">
+        <button id="btn-tab-home" class="nav-btn active">
+          <span class="nav-icon">⌂</span> DOMÓTICA
+        </button>
+        <button id="btn-tab-proxmox" class="nav-btn">
+          <span class="nav-icon">⬢</span> PROXMOX
+        </button>
+        <button id="btn-tab-network" class="nav-btn">
+          <span class="nav-icon">🛡</span> REDE / DNS
+        </button>
+        <button id="btn-tab-services" class="nav-btn">
+          <span class="nav-icon">⚡</span> SERVIÇOS
+        </button>
+        <button id="btn-tab-commands" class="nav-btn">
+          <span class="nav-icon">⌨</span> COMANDOS
+        </button>
+      </nav>
+
+      <!-- Contentor Dinâmico de Cartões Informativos -->
+      <main id="hud-main-panel" class="hud-content">
+        <!-- Renderizado dinamicamente por ui-overlay.ts -->
+      </main>
+
+      <!-- Barra de Estado Inferior e Ação XR -->
+      <footer class="hud-footer">
+        <div class="voice-box">
+          <button id="btn-voice-listen" class="action-btn btn-voice">
+            <span class="mic-icon">🎙</span> OUVIR COMANDO
+          </button>
+          <span id="voice-transcript" class="transcript-text">Aguardando comando de voz ou seleção manual...</span>
+        </div>
+
+        <div class="xr-controls">
+          <button id="btn-enter-xr" class="action-btn btn-xr">
+            ENTRAR EM VR / AR (QUEST)
+          </button>
+        </div>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
+

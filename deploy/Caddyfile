@@ -1,0 +1,45 @@
+{$JARVIS_DOMAIN:jarvis.homelab.local} {
+    # Terminação TLS flexível:
+    # Use "tls internal" para certificados assinados pela CA interna do Caddy
+    # Ou especifique email / DNS-01 provider para certificados públicos
+    tls {$CADDY_TLS_MODE:internal}
+
+    # Cabeçalhos de segurança essenciais para WebXR e PWA
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Cross-Origin-Opener-Policy "same-origin"
+        Cross-Origin-Embedder-Policy "credentialless"
+        # Ativa compressão
+        -Server
+    }
+
+    # API Backend FastAPI
+    handle /api/* {
+        reverse_proxy jarvis-backend:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Frontend SPA (Nginx)
+    handle {
+        reverse_proxy jarvis-frontend:80 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Logs de acesso estruturados
+    log {
+        output stdout
+        format json
+        level INFO
+    }
+}
+
