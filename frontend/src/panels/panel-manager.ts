@@ -140,11 +140,9 @@ export class SpatialPanelManager3D {
     panelGroup.position.set(x, y, z);
 
     // Orienta a face frontal (+Z) diretamente para o utilizador no centro (0, y, 0)
-    // O rotateY(Math.PI) compensa o lookAt do Three.js para que o texto nunca fique espelhado
     const dummy = new THREE.Object3D();
     dummy.position.set(x, y, z);
     dummy.lookAt(0, y, 0);
-    dummy.rotateY(Math.PI);
     panelGroup.quaternion.copy(dummy.quaternion);
 
     panelGroup.add(mesh);
@@ -244,9 +242,6 @@ export class SpatialPanelManager3D {
       const dummy = new THREE.Object3D();
       dummy.position.copy(p.group.position);
       dummy.lookAt(camPos.x, p.group.position.y, camPos.z);
-      // Três.js lookAt aponta o eixo local -Z ao alvo. Rodamos 180° em Y para que a face frontal (+Z)
-      // aponte diretamente aos olhos do utilizador, eliminando qualquer efeito de texto invertido/espelhado.
-      dummy.rotateY(Math.PI);
 
       // Slerp suave (0.05) mantendo a face frontal orientada para o utilizador
       p.group.quaternion.slerp(dummy.quaternion, 0.05);
@@ -1079,7 +1074,6 @@ export class SpatialPanelManager3D {
 
     this.grabbedPanel.group.position.lerp(targetPos, 0.20);
     this.grabbedPanel.group.lookAt(camPos.x, this.grabbedPanel.group.position.y, camPos.z);
-    this.grabbedPanel.group.rotateY(Math.PI);
   }
 
   public handleRaycastClick(mesh: THREE.Object3D, uv?: THREE.Vector2): boolean {
@@ -1134,7 +1128,7 @@ export class SpatialPanelManager3D {
 
   private loadSavedLayout() {
     try {
-      const raw = localStorage.getItem('jarvis_spatial_positions_v5');
+      const raw = localStorage.getItem('jarvis_spatial_positions_v6');
       if (!raw) return;
       const data = JSON.parse(raw);
       Object.entries(data).forEach(([id, pos]: [string, any]) => {
@@ -1145,7 +1139,6 @@ export class SpatialPanelManager3D {
             const dummy = new THREE.Object3D();
             dummy.position.set(pos.x, pos.y, pos.z);
             dummy.lookAt(0, pos.y, 0);
-            dummy.rotateY(Math.PI);
             panel.group.quaternion.copy(dummy.quaternion);
           }
           if (pos.visible !== undefined) panel.group.visible = pos.visible;
@@ -1168,7 +1161,7 @@ export class SpatialPanelManager3D {
           visible: p.group.visible
         };
       });
-      localStorage.setItem('jarvis_spatial_positions_v5', JSON.stringify(layout));
+      localStorage.setItem('jarvis_spatial_positions_v6', JSON.stringify(layout));
     } catch (e) {}
   }
 
