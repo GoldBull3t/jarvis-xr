@@ -223,3 +223,21 @@ class ServiceHealthItem(BaseModel):
     last_checked: str
     error_message: Optional[str] = None
 
+
+# --- SCHEMAS DE DIAGNÓSTICO DO HOMELAB (PILAR 4) ---
+
+class DiagnosticCheckItem(BaseModel):
+    service: str
+    status: str  # "ok", "warning", "error", "disabled"
+    latency_ms: Optional[float] = None
+    endpoint: Optional[str] = None
+    message: str
+    details: Optional[Dict[str, Any]] = None
+
+
+class FullDiagnosticsData(BaseModel):
+    timestamp: datetime = Field(default_factory=utc_now)
+    all_healthy: bool
+    checks: List[DiagnosticCheckItem]
+    system_info: Dict[str, Any]
+

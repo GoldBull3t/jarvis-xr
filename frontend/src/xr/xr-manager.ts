@@ -38,6 +38,10 @@ export class XRManager {
 
   // Callbacks de interação
   public onSelectCallback?: (event: XRInteractionEvent) => void;
+  public onSelectStartCallback?: (event: XRInteractionEvent) => void;
+  public onSelectEndCallback?: (controllerIndex: number) => void;
+  public onSqueezeStartCallback?: (event: XRInteractionEvent) => void;
+  public onSqueezeEndCallback?: (controllerIndex: number) => void;
   public onHoverCallback?: (event: XRInteractionEvent | null) => void;
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene) {
@@ -133,15 +137,63 @@ export class XRManager {
     });
 
     // Disparo por gatilho ou pinch do controlador 0
-    this.controller1.addEventListener('selectstart', () => this.handleSelect(0));
+    this.controller1.addEventListener('selectstart', () => {
+      this.handleSelect(0);
+      this.handleSelectStart(0);
+    });
+    this.controller1.addEventListener('selectend', () => {
+      if (this.onSelectEndCallback) this.onSelectEndCallback(0);
+    });
+    this.controller1.addEventListener('squeezestart', () => {
+      this.handleSqueezeStart(0);
+    });
+    this.controller1.addEventListener('squeezeend', () => {
+      if (this.onSqueezeEndCallback) this.onSqueezeEndCallback(0);
+    });
     this.controller1.addEventListener('select', () => this.triggerHaptic(0));
 
     // Disparo por gatilho ou pinch do controlador 1
-    this.controller2.addEventListener('selectstart', () => this.handleSelect(1));
+    this.controller2.addEventListener('selectstart', () => {
+      this.handleSelect(1);
+      this.handleSelectStart(1);
+    });
+    this.controller2.addEventListener('selectend', () => {
+      if (this.onSelectEndCallback) this.onSelectEndCallback(1);
+    });
+    this.controller2.addEventListener('squeezestart', () => {
+      this.handleSqueezeStart(1);
+    });
+    this.controller2.addEventListener('squeezeend', () => {
+      if (this.onSqueezeEndCallback) this.onSqueezeEndCallback(1);
+    });
     this.controller2.addEventListener('select', () => this.triggerHaptic(1));
   }
 
-  private handleSelect(controllerIndex: number) {
+  private handleSelectStart(controllerIndex: number) {
+    const hit = this.raycastController(controllerIndex);
+    if (hit && this.onSelectStartCallback) {
+      this.onSelectStartCallback({
+        intersectedObject: hit.object,
+        point: hit.point,
+        uv: hit.uv,
+        controllerIndex
+      });
+    }
+  }
+
+  private handleSqueezeStart(controllerIndex: number) {
+    const hit = this.raycastController(controllerIndex);
+    if (hit && this.onSqueezeStartCallback) {
+      this.onSqueezeStartCallback({
+        intersectedObject: hit.object,
+        point: hit.point,
+        uv: hit.uv,
+        controllerIndex
+      });
+    }
+  }
+
+  private raycastController(controllerIndex: number): THREE.Intersection | null {
     const controller = controllerIndex === 0 ? this.controller1 : this.controller2;
     this.tempMatrix.identity().extractRotation(controller.matrixWorld);
 
@@ -149,9 +201,12 @@ export class XRManager {
     this.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(this.tempMatrix);
 
     const intersects = this.raycaster.intersectObjects(this.interactiveObjects, true);
+    return intersects.length > 0 ? intersects[0] : null;
+  }
 
-    if (intersects.length > 0 && this.onSelectCallback) {
-      const hit = intersects[0];
+  private handleSelect(controllerIndex: number) {
+    const hit = this.raycastController(controllerIndex);
+    if (hit && this.onSelectCallback) {
       this.onSelectCallback({
         intersectedObject: hit.object,
         point: hit.point,
@@ -159,6 +214,18 @@ export class XRManager {
         controllerIndex
       });
     }
+  }
+
+  public getControllerRay(controllerIndex: number): { origin: THREE.Vector3; direction: THREE.Vector3 } {
+    const controller = controllerIndex === 0 ? this.controller1 : this.controller2;
+    this.tempMatrix.identity().extractRotation(controller.matrixWorld);
+    const origin = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
+    const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(this.tempMatrix);
+    return { origin, direction };
+  }
+
+  public getController(controllerIndex: number): THREE.XRTargetRaySpace {
+    return controllerIndex === 0 ? this.controller1 : this.controller2;
   }
 
   /**

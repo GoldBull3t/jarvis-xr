@@ -8,7 +8,7 @@ from fastapi.exceptions import RequestValidationError
 
 from app.config import settings
 from app.schemas import APIResponse
-from app.routes import health, status as sys_status, commands, home, proxmox, dns, services
+from app.routes import health, status as sys_status, commands, home, proxmox, dns, services, diagnostics, stream
 
 # Configuração de Logs
 logging.basicConfig(
@@ -104,4 +104,6 @@ app.include_router(home.router, prefix="/api")
 app.include_router(proxmox.router, prefix="/api")
 app.include_router(dns.router, prefix="/api")
 app.include_router(services.router, prefix="/api")
+app.include_router(diagnostics.router, prefix="/api")
+app.include_router(stream.router, prefix="/api")
 

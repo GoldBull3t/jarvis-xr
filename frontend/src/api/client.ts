@@ -16,7 +16,8 @@ import type {
   MediaPlayerActionParams,
   ProxmoxSummaryData,
   DnsSummaryData,
-  ServiceHealthItem
+  ServiceHealthItem,
+  FullDiagnosticsData
 } from '../types';
 
 export class JarvisApiClient {
@@ -248,6 +249,25 @@ export class JarvisApiClient {
     } catch {
       // Ignora falhas de presença sem interromper o utilizador
     }
+  }
+
+  /**
+   * Estabelece ligação SSE contínua (Pilar 3) com suporte a token de autenticação
+   */
+  public createEventSource(): EventSource | null {
+    if (typeof EventSource === 'undefined') return null;
+    let url = `${this.baseUrl}/stream/events`;
+    if (this.apiKey && this.apiKey.trim() !== '') {
+      url += `?token=${encodeURIComponent(this.apiKey.trim())}`;
+    }
+    return new EventSource(url);
+  }
+
+  /**
+   * Executa diagnóstico completo de latência e integridade do homelab (Pilar 4)
+   */
+  public async getFullDiagnostics(): Promise<FullDiagnosticsData> {
+    return this.request<FullDiagnosticsData>('/diagnostics/full');
   }
 
   /**

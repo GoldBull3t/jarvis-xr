@@ -221,3 +221,25 @@ export interface CommandExecuteResult {
   data?: Record<string, any>;
 }
 
+export interface DiagnosticCheckItem {
+  service: string;
+  status: 'ok' | 'warning' | 'error' | 'disabled';
+  latency_ms?: number | null;
+  endpoint?: string | null;
+  message: string;
+  details?: Record<string, any> | null;
+}
+
+export interface FullDiagnosticsData {
+  timestamp: string;
+  all_healthy: boolean;
+  checks: DiagnosticCheckItem[];
+  system_info: {
+    environment: string;
+    auth_required: boolean;
+    cors_origins: string[];
+    hostname: string;
+  };
+}
+
+

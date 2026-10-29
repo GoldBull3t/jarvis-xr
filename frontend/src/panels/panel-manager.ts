@@ -1,7 +1,8 @@
 /**
- * Gestor de Painéis Espaciais 3D em Three.js (Hologramas no Espaço XR com Interatividade)
+ * Gestor de Painéis Espaciais 3D em Three.js (Hologramas no Espaço XR com Interatividade, Agarrar/Mover e Câmara)
  */
 import * as THREE from 'three';
+import { soundFX } from '../scene/audio-fx';
 
 export interface PanelButtonArea {
   id: string;
@@ -30,6 +31,17 @@ export class SpatialPanelManager3D {
   public group: THREE.Group;
   private panels: Map<string, FloatingPanel3D> = new Map();
 
+  // Estados de Manipulação Espacial 3D (Pilar 2: Agarrar e Reposicionar)
+  private grabbedPanel: FloatingPanel3D | null = null;
+  private grabControllerIndex: number = 0;
+  private grabDistance: number = 1.8;
+
+  // Estado da Câmara 3D
+  private cameraSnapshotUrl: string = '';
+  private cameraImageObj: HTMLImageElement | null = null;
+  private isCameraLoading: boolean = false;
+  private lastCameraUpdate: string = '';
+
   // Callback chamado quando um botão dentro do painel 3D é premido por laser/toque
   public onPanelAction?: (action: string, panelId: string, data?: any) => void;
 
@@ -47,6 +59,10 @@ export class SpatialPanelManager3D {
 
     // 3. Painel Superior Central: Rede & DNS Shield
     this.createPanel('network', 'REDE & DNS // SHIELD', 0, 1.05, -1.9, 0);
+
+    // 4. Painel Inferior Central: Câmara & Vigilância (Pilar 2)
+    this.createPanel('camera', 'VIGILÂNCIA // CÂMARA EM TEMPO REAL', 0, -0.65, -1.8, 0);
+    this.setVisible('camera', false);
   }
 
   private createPanel(id: string, title: string, x: number, y: number, z: number, rotY: number) {
@@ -113,13 +129,18 @@ export class SpatialPanelManager3D {
     ctx.lineWidth = 3;
     ctx.strokeRect(3, 3, 506, 334);
 
-    // Barra de Título Superior
+    // Barra de Título Superior (Área de Agarrar / Drag)
     ctx.fillStyle = 'rgba(0, 229, 255, 0.18)';
     ctx.fillRect(4, 4, 504, 50);
 
     ctx.fillStyle = '#00e5ff';
-    ctx.font = 'bold 20px "SF Mono", monospace, Courier';
-    ctx.fillText(title, 18, 36);
+    ctx.font = 'bold 18px "SF Mono", monospace, Courier';
+    ctx.fillText(title, 16, 34);
+
+    // Indicador visual de agarrar
+    ctx.fillStyle = 'rgba(0, 229, 255, 0.45)';
+    ctx.font = '11px monospace';
+    ctx.fillText('[✛ AGARRAR]', 350, 32);
 
     // Botão Fechar [X] no topo direito
     const closeBtn: PanelButtonArea = {
@@ -144,7 +165,76 @@ export class SpatialPanelManager3D {
     ctx.font = 'bold 18px monospace';
     ctx.fillText('✕', closeBtn.x + 11, closeBtn.y + 24);
 
-    // Linhas de Conteúdo
+    // Se for o painel de câmara, desenha a imagem ou grelha tática
+    if (panel.id === 'camera') {
+      if (this.cameraImageObj) {
+        try {
+          ctx.drawImage(this.cameraImageObj, 16, 60, 480, 205);
+          ctx.strokeStyle = 'rgba(0, 229, 255, 0.6)';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(16, 60, 480, 205);
+
+          // Timestamp overlay
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+          ctx.fillRect(20, 64, 180, 24);
+          ctx.fillStyle = '#00ff9d';
+          ctx.font = '11px monospace';
+          ctx.fillText(`LIVE // ${this.lastCameraUpdate || new Date().toLocaleTimeString()}`, 28, 80);
+        } catch {}
+      } else {
+        // Grelha CCTV tática standby
+        ctx.fillStyle = 'rgba(0, 25, 35, 0.9)';
+        ctx.fillRect(16, 60, 480, 205);
+        ctx.strokeStyle = 'rgba(0, 229, 255, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(16, 60, 480, 205);
+
+        // Mira central
+        ctx.strokeStyle = '#00e5ff';
+        ctx.beginPath();
+        ctx.moveTo(256 - 30, 162);
+        ctx.lineTo(256 + 30, 162);
+        ctx.moveTo(256, 162 - 30);
+        ctx.lineTo(256, 162 + 30);
+        ctx.stroke();
+
+        ctx.fillStyle = '#00e5ff';
+        ctx.font = 'bold 15px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(this.isCameraLoading ? 'A CARREGAR SNAPSHOT...' : 'SINAL DE VÍDEO // AGUARDANDO ATUALIZAÇÃO', 256, 220);
+        ctx.textAlign = 'left';
+      }
+
+      // Botões específicos de câmara
+      const refreshCamBtn: PanelButtonArea = {
+        id: 'btn-cam-refresh',
+        x: 20,
+        y: 280,
+        width: 220,
+        height: 42,
+        label: '⟳ ATUALIZAR SNAPSHOT',
+        action: 'refresh_camera'
+      };
+      panel.buttons.push(refreshCamBtn);
+      this.drawButton(ctx, refreshCamBtn, highlightButtonId === refreshCamBtn.id);
+
+      const openCamBtn: PanelButtonArea = {
+        id: 'btn-cam-open',
+        x: 260,
+        y: 280,
+        width: 230,
+        height: 42,
+        label: '📷 ABRIR NO NAVEGADOR',
+        action: 'open_camera_url'
+      };
+      panel.buttons.push(openCamBtn);
+      this.drawButton(ctx, openCamBtn, highlightButtonId === openCamBtn.id);
+
+      panel.texture.needsUpdate = true;
+      return;
+    }
+
+    // Linhas de Conteúdo padrão dos outros painéis
     ctx.fillStyle = '#ffffff';
     ctx.font = '16px "SF Mono", monospace, Courier';
     let startY = 88;
@@ -153,13 +243,13 @@ export class SpatialPanelManager3D {
       startY += 30;
     }
 
-    // Botões de Ação na base do painel (ex.: Atualizar dados ou Alternar luz)
+    // Botões de Ação na base do painel
     if (panel.id === 'home') {
       const toggleLightBtn: PanelButtonArea = {
         id: 'btn-toggle-light',
-        x: 20,
+        x: 18,
         y: 280,
-        width: 220,
+        width: 155,
         height: 42,
         label: '💡 LUZ ESCRITÓRIO',
         action: 'toggle_light',
@@ -167,19 +257,43 @@ export class SpatialPanelManager3D {
       };
       panel.buttons.push(toggleLightBtn);
       this.drawButton(ctx, toggleLightBtn, highlightButtonId === toggleLightBtn.id);
-    }
 
-    const refreshBtn: PanelButtonArea = {
-      id: 'btn-refresh',
-      x: panel.id === 'home' ? 260 : 20,
-      y: 280,
-      width: 230,
-      height: 42,
-      label: '⟳ ATUALIZAR MÉTRICAS',
-      action: 'refresh_data'
-    };
-    panel.buttons.push(refreshBtn);
-    this.drawButton(ctx, refreshBtn, highlightButtonId === refreshBtn.id);
+      const camBtn: PanelButtonArea = {
+        id: 'btn-view-camera',
+        x: 183,
+        y: 280,
+        width: 140,
+        height: 42,
+        label: '📷 CÂMARA',
+        action: 'open_panel_camera'
+      };
+      panel.buttons.push(camBtn);
+      this.drawButton(ctx, camBtn, highlightButtonId === camBtn.id);
+
+      const refreshBtn: PanelButtonArea = {
+        id: 'btn-refresh',
+        x: 333,
+        y: 280,
+        width: 160,
+        height: 42,
+        label: '⟳ ATUALIZAR',
+        action: 'refresh_data'
+      };
+      panel.buttons.push(refreshBtn);
+      this.drawButton(ctx, refreshBtn, highlightButtonId === refreshBtn.id);
+    } else {
+      const refreshBtn: PanelButtonArea = {
+        id: 'btn-refresh',
+        x: 20,
+        y: 280,
+        width: 240,
+        height: 42,
+        label: '⟳ ATUALIZAR MÉTRICAS',
+        action: 'refresh_data'
+      };
+      panel.buttons.push(refreshBtn);
+      this.drawButton(ctx, refreshBtn, highlightButtonId === refreshBtn.id);
+    }
 
     panel.texture.needsUpdate = true;
   }
@@ -193,7 +307,7 @@ export class SpatialPanelManager3D {
     ctx.strokeRect(btn.x, btn.y, btn.width, btn.height);
 
     ctx.fillStyle = isHovered ? '#000000' : '#00e5ff';
-    ctx.font = 'bold 15px monospace';
+    ctx.font = 'bold 14px monospace';
     ctx.textAlign = 'center';
     ctx.fillText(btn.label, btn.x + btn.width / 2, btn.y + 26);
     ctx.textAlign = 'left';
@@ -221,12 +335,18 @@ export class SpatialPanelManager3D {
         py >= btn.y &&
         py <= btn.y + btn.height
       ) {
+        soundFX.playClick();
+
         // Flash visual de clique
         this.drawHoloPanel(panel, btn.id);
         setTimeout(() => this.drawHoloPanel(panel), 150);
 
         if (btn.action === 'close_panel') {
           this.setVisible(panelId, false);
+          soundFX.playHoloDeploy();
+        } else if (btn.action === 'open_panel_camera') {
+          this.setVisible('camera', true);
+          soundFX.playHoloDeploy();
         }
 
         if (this.onPanelAction) {
@@ -235,6 +355,105 @@ export class SpatialPanelManager3D {
         break;
       }
     }
+  }
+
+  /**
+   * Inicia o agarrar espacial 3D para reposicionar o painel na sala (Pilar 2)
+   */
+  public startGrab(
+    mesh: THREE.Object3D,
+    controllerIndex: number,
+    hitPoint: THREE.Vector3,
+    uv?: THREE.Vector2,
+    forceGrab: boolean = false
+  ): boolean {
+    const panelId = mesh.userData?.panelId;
+    if (!panelId) return false;
+
+    const panel = this.panels.get(panelId);
+    if (!panel || !panel.group.visible) return false;
+
+    const py = uv ? (1.0 - uv.y) * 340 : 0;
+    // Agarra se clicou na barra de título (topo < 55px) ou através do gatilho lateral (grip)
+    if (forceGrab || !uv || py <= 55) {
+      this.grabbedPanel = panel;
+      this.grabControllerIndex = controllerIndex;
+      // Mantém a distância atual do utilizador ao painel
+      this.grabDistance = Math.max(0.8, Math.min(3.5, hitPoint.distanceTo(panel.group.position) + 1.8));
+      soundFX.playClick();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Solta o painel agarrado, fixando-o na nova posição tridimensional
+   */
+  public releaseGrab(): boolean {
+    if (this.grabbedPanel) {
+      soundFX.playHoloDeploy();
+      this.grabbedPanel = null;
+      return true;
+    }
+    return false;
+  }
+
+  public isGrabbing(): boolean {
+    return this.grabbedPanel !== null;
+  }
+
+  /**
+   * Atualiza a posição do painel durante o arrasto espacial no ciclo de renderização
+   */
+  public updateDragging(
+    getRayFn: (index: number) => { origin: THREE.Vector3; direction: THREE.Vector3 },
+    camera: THREE.Camera
+  ) {
+    if (!this.grabbedPanel) return;
+
+    const ray = getRayFn(this.grabControllerIndex);
+    const targetPos = ray.origin.clone().add(ray.direction.clone().multiplyScalar(this.grabDistance));
+
+    // Interpolação suave (lerp) para movimento fluido e sem trepidação
+    this.grabbedPanel.group.position.lerp(targetPos, 0.20);
+
+    // Reorienta o painel para ficar virado para o utilizador
+    this.grabbedPanel.group.lookAt(
+      camera.position.x,
+      this.grabbedPanel.group.position.y,
+      camera.position.z
+    );
+  }
+
+  /**
+   * Atualiza o snapshot da câmara 3D (Pilar 2)
+   */
+  public setCameraSnapshot(url: string, label: string = 'CÂMARA DE VIGILÂNCIA') {
+    this.cameraSnapshotUrl = url;
+    const panel = this.panels.get('camera');
+    if (!panel) return;
+
+    panel.title = `VIGILÂNCIA // ${label.toUpperCase()}`;
+    this.isCameraLoading = true;
+    this.drawHoloPanel(panel);
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      this.cameraImageObj = img;
+      this.isCameraLoading = false;
+      this.lastCameraUpdate = new Date().toLocaleTimeString();
+      this.drawHoloPanel(panel);
+    };
+    img.onerror = () => {
+      this.isCameraLoading = false;
+      this.drawHoloPanel(panel);
+    };
+    img.src = `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`;
+  }
+
+  public getCameraSnapshotUrl(): string {
+    return this.cameraSnapshotUrl;
   }
 
   /**
@@ -266,7 +485,12 @@ export class SpatialPanelManager3D {
    */
   public setVisible(id: string, visible: boolean) {
     const p = this.panels.get(id);
-    if (p) p.group.visible = visible;
+    if (p) {
+      p.group.visible = visible;
+      if (visible) {
+        soundFX.playHoloDeploy();
+      }
+    }
   }
 
   /**
@@ -276,5 +500,6 @@ export class SpatialPanelManager3D {
     this.panels.forEach((p) => {
       p.group.visible = visible;
     });
+    soundFX.playHoloDeploy();
   }
 }

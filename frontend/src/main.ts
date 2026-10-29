@@ -1,5 +1,6 @@
 /**
  * Ponto de Entrada Principal da Aplicação JARVIS XR (WebXR + Hand Tracking + Desktop)
+ * Integra os 4 Pilares: Voz Determinística, Interação Espacial 3D com Grabbing e Câmara, Telemetria SSE em Tempo Real e Diagnóstico Completo.
  */
 import * as THREE from 'three';
 import { JarvisCoreVisualizer } from './scene/core';
@@ -8,6 +9,7 @@ import { SpatialPanelManager3D } from './panels/panel-manager';
 import { UiOverlayManager } from './panels/ui-overlay';
 import { XRManager } from './xr/xr-manager';
 import { speechService } from './voice/speech-service';
+import { soundFX } from './scene/audio-fx';
 import { api } from './api/client';
 import type {
   DemoStatusData,
@@ -15,7 +17,8 @@ import type {
   HomeSummaryData,
   ProxmoxSummaryData,
   DnsSummaryData,
-  ServiceHealthItem
+  ServiceHealthItem,
+  FullDiagnosticsData
 } from './types';
 
 class JarvisApp {
@@ -38,7 +41,12 @@ class JarvisApp {
   public pveData: ProxmoxSummaryData | null = null;
   public dnsData: DnsSummaryData | null = null;
   public servicesData: ServiceHealthItem[] | null = null;
+  public diagnosticsData: FullDiagnosticsData | null = null;
   public commands: JarvisCommand[] = [];
+
+  // Pilar 3: Canal SSE de tempo real
+  private sseClient: EventSource | null = null;
+  private activeCameraEntityId: string = '';
 
   // Controlo simples com rato em desktop
   private isDragging: boolean = false;
@@ -102,17 +110,58 @@ class JarvisApp {
       this.spatialPanels.handleRaycastClick(event.intersectedObject, event.uv);
     };
 
+    // Pilar 2: Agarrar e mover painéis no espaço 3D (SelectStart e SqueezeStart)
+    this.xrManager.onSelectStartCallback = (event) => {
+      this.spatialPanels.startGrab(
+        event.intersectedObject,
+        event.controllerIndex,
+        event.point,
+        event.uv,
+        false
+      );
+    };
+
+    this.xrManager.onSelectEndCallback = (_controllerIndex) => {
+      this.spatialPanels.releaseGrab();
+    };
+
+    this.xrManager.onSqueezeStartCallback = (event) => {
+      // O botão de Grip (pegar) agarra imediatamente o painel apontado
+      this.spatialPanels.startGrab(
+        event.intersectedObject,
+        event.controllerIndex,
+        event.point,
+        event.uv,
+        true
+      );
+    };
+
+    this.xrManager.onSqueezeEndCallback = (_controllerIndex) => {
+      this.spatialPanels.releaseGrab();
+    };
+
     // Responde a ações disparadas pelos botões dentro dos painéis 3D
-    this.spatialPanels.onPanelAction = async (action, panelId, _data) => {
+    this.spatialPanels.onPanelAction = async (action, panelId, data) => {
       if (action === 'refresh_data') {
         this.speakFeedback('A atualizar métricas do homelab.');
         await this.loadInitialData();
       } else if (action === 'toggle_light') {
-        this.speakFeedback('Comando enviado para a entidade do escritório.');
-        await this.triggerCommand({ command_id: 'cmd_light_office_toggle' });
+        this.speakFeedback('Comando enviado para a entidade.');
+        await this.toggleEntity(data?.entity_id || 'light.escritorio', 'light');
+      } else if (action === 'open_panel_camera') {
+        this.speakFeedback('A carregar visão da câmara.');
+        this.spatialPanels.setVisible('camera', true);
+        this.loadCameraSnapshot();
+      } else if (action === 'refresh_camera') {
+        this.loadCameraSnapshot();
+      } else if (action === 'open_camera_url') {
+        const url = this.spatialPanels.getCameraSnapshotUrl();
+        if (url) window.open(url, '_blank');
       } else if (action === 'close_panel') {
         this.speakFeedback(`Painel ${panelId} recolhido.`);
       }
+
+      this.xrManager.setInteractiveObjects(this.spatialPanels.getInteractiveMeshes());
     };
   }
 
@@ -157,7 +206,7 @@ class JarvisApp {
       }
     }) as EventListener);
 
-    // Escuta evento de alternância de entidade (Fase 4 - Home Assistant)
+    // Escuta evento de alternância de entidade (Home Assistant)
     window.addEventListener('jarvis-action-entity', (async (e: any) => {
       const { entityId, domain } = e.detail || {};
       if (entityId) {
@@ -178,11 +227,17 @@ class JarvisApp {
       await this.loadInitialData();
     }) as EventListener);
 
+    // Escuta evento de execução de diagnósticos (Pilar 4)
+    window.addEventListener('jarvis-run-diagnostics', (async () => {
+      await this.loadDiagnostics();
+    }) as EventListener);
+
     // Escuta erro 401 de autenticação do backend
     window.addEventListener('jarvis-auth-error', (() => {
       this.uiOverlay.setConnectionState('error');
       this.uiOverlay.setVoiceFeedback('Autenticação necessária (HTTP 401). Abra a configuração de Chave no topo.');
       this.uiOverlay.openApiKeyModal();
+      soundFX.playAlert();
     }) as EventListener);
 
     // Recuperação automática de suspensão do headset Meta Quest 3S
@@ -190,6 +245,7 @@ class JarvisApp {
       if (document.visibilityState === 'visible') {
         console.log('Sessão reativada (Headset acordou). A sincronizar telemetria...');
         await this.loadInitialData();
+        this.initSSE();
         if (this.isArActive) {
           await api.sendPresence(true);
         }
@@ -264,9 +320,11 @@ class JarvisApp {
         await api.sendPresence(false);
       });
 
+      soundFX.playHoloDeploy();
       this.speakFeedback('Modo imersivo Meta Quest ativado. Tracking de mãos e controladores operacional.');
     } catch (err: any) {
       console.error('Falha ao iniciar WebXR:', err);
+      soundFX.playAlert();
       alert(`Não foi possível iniciar WebXR: ${err?.message || err}`);
     }
   }
@@ -325,17 +383,135 @@ class JarvisApp {
       this.dnsData = dnsRes;
       this.servicesData = servicesRes;
 
-      this.uiOverlay.updateData(demo, cmds, homeRes, pveRes, dnsRes, servicesRes);
+      // Auto-deteta câmara se disponível no Home Assistant
+      if (homeRes && homeRes.authorized_entities) {
+        const cam = homeRes.authorized_entities.find(e => e.domain === 'camera' || e.entity_id.startsWith('camera.'));
+        if (cam) this.activeCameraEntityId = cam.entity_id;
+      }
 
-      // Atualiza os painéis espaciais 3D com dados consolidados
+      this.uiOverlay.updateData(demo, cmds, homeRes, pveRes, dnsRes, servicesRes, this.diagnosticsData);
       this.updateSpatialPanelsData(demo, homeRes, pveRes, dnsRes);
-
-      // Regista os meshes interativos no XR Manager
       this.xrManager.setInteractiveObjects(this.spatialPanels.getInteractiveMeshes());
+
+      // Inicia o canal SSE em tempo real (Pilar 3) e o diagnóstico em background (Pilar 4)
+      this.initSSE();
+      this.loadDiagnostics(true);
     } catch (err) {
-      console.warn('Backend offline ou inacessível. A carregar dados padrão de demonstração...', err);
+      console.warn('Backend offline ou inacessível. A carregar dados de demonstração...', err);
       this.uiOverlay.setConnectionState('offline');
       this.coreVisualizer.setStatus('warning');
+    }
+  }
+
+  /**
+   * Canal SSE de telemetria contínua sem polling (Pilar 3)
+   */
+  private initSSE() {
+    if (this.sseClient) {
+      this.sseClient.close();
+      this.sseClient = null;
+    }
+
+    try {
+      this.sseClient = api.createEventSource();
+      if (!this.sseClient) return;
+
+      this.sseClient.addEventListener('telemetry', (e: MessageEvent) => {
+        try {
+          const payload = JSON.parse(e.data);
+          let hasUpdates = false;
+
+          if (payload.home) {
+            this.homeData = payload.home;
+            hasUpdates = true;
+            if (!this.activeCameraEntityId && payload.home.authorized_entities) {
+              const cam = payload.home.authorized_entities.find((ent: any) => ent.domain === 'camera' || ent.entity_id?.startsWith('camera.'));
+              if (cam) this.activeCameraEntityId = cam.entity_id;
+            }
+          }
+
+          if (payload.proxmox) {
+            this.pveData = payload.proxmox;
+            hasUpdates = true;
+          }
+
+          if (hasUpdates && this.demoData) {
+            this.uiOverlay.updateData(
+              this.demoData,
+              this.commands,
+              this.homeData,
+              this.pveData,
+              this.dnsData,
+              this.servicesData,
+              this.diagnosticsData
+            );
+            this.updateSpatialPanelsData(this.demoData, this.homeData, this.pveData, this.dnsData);
+          }
+        } catch (err) {
+          console.debug('Erro ao processar telemetria SSE:', err);
+        }
+      });
+
+      this.sseClient.onerror = () => {
+        // EventSource nativo reconecta automaticamente após 3 segundos
+      };
+    } catch (err) {
+      console.warn('Falha ao inicializar EventSource SSE:', err);
+    }
+  }
+
+  /**
+   * Carrega e desenha o snapshot de câmara no painel 3D (Pilar 2)
+   */
+  private loadCameraSnapshot() {
+    let camEntity = this.activeCameraEntityId;
+    if (!camEntity && this.homeData?.authorized_entities) {
+      const found = this.homeData.authorized_entities.find(e => e.domain === 'camera' || e.entity_id.startsWith('camera.'));
+      if (found) {
+        camEntity = found.entity_id;
+        this.activeCameraEntityId = camEntity;
+      }
+    }
+
+    if (camEntity) {
+      let url = api.getCameraSnapshotUrl(camEntity);
+      const key = api.getApiKey();
+      if (key && key.trim()) {
+        url += `?token=${encodeURIComponent(key.trim())}`;
+      }
+      this.spatialPanels.setCameraSnapshot(url, camEntity);
+    } else {
+      this.spatialPanels.setCameraSnapshot('', 'SEM CÂMARA REGISTADA');
+    }
+  }
+
+  /**
+   * Executa a bateria de diagnósticos de latência do homelab (Pilar 4)
+   */
+  private async loadDiagnostics(silent: boolean = false) {
+    try {
+      const diag = await api.getFullDiagnostics();
+      this.diagnosticsData = diag;
+      if (this.demoData) {
+        this.uiOverlay.updateData(
+          this.demoData,
+          this.commands,
+          this.homeData,
+          this.pveData,
+          this.dnsData,
+          this.servicesData,
+          this.diagnosticsData
+        );
+      }
+      if (!silent) {
+        soundFX.playSuccessTone();
+        this.speakFeedback(diag.all_healthy ? 'Diagnóstico concluído. Todos os sistemas operacionais.' : 'Diagnóstico concluído com avisos.');
+      }
+    } catch (err) {
+      if (!silent) {
+        soundFX.playAlert();
+        this.speakFeedback('Falha ao executar diagnóstico.');
+      }
     }
   }
 
@@ -351,16 +527,21 @@ class JarvisApp {
       } else if (domain === 'climate' || entityId.startsWith('climate.')) {
         res = await api.actionClimate({ entity_id: entityId, action: 'set_hvac_mode', hvac_mode: 'heat' });
       } else if (domain === 'camera' || entityId.startsWith('camera.')) {
-        window.open(api.getCameraSnapshotUrl(entityId), '_blank');
+        this.activeCameraEntityId = entityId;
+        this.spatialPanels.setVisible('camera', true);
+        this.loadCameraSnapshot();
         this.speakFeedback('A carregar imagem instantânea da câmara.');
         return;
       } else {
         res = await api.actionLight(entityId, 'toggle');
       }
+
+      soundFX.playSuccessTone();
       this.speakFeedback(res.message);
       this.uiOverlay.setVoiceFeedback(res.message);
       await this.loadInitialData();
     } catch (err: any) {
+      soundFX.playAlert();
       const msg = err.message || 'Falha ao executar ação na entidade';
       this.speakFeedback(msg);
       this.uiOverlay.setVoiceFeedback(msg);
@@ -374,10 +555,12 @@ class JarvisApp {
 
     try {
       const res = await api.actionProxmoxVm(vmid, action, true);
+      soundFX.playSuccessTone();
       this.speakFeedback(res.message);
       this.uiOverlay.setVoiceFeedback(res.message);
       await this.loadInitialData();
     } catch (err: any) {
+      soundFX.playAlert();
       const errMsg = err.message || 'Falha ao executar ação na VM Proxmox';
       this.speakFeedback(errMsg);
       this.uiOverlay.setVoiceFeedback(errMsg);
@@ -454,6 +637,7 @@ class JarvisApp {
     // Configurar callbacks do serviço modular de voz
     speechService.onStateChange = (state, message) => {
       if (state === 'listening') {
+        soundFX.playClick();
         btnVoice.classList.add('listening');
         this.coreVisualizer.setStatus('listening');
         this.uiOverlay.setVoiceFeedback(message || 'A escutar...', true);
@@ -461,6 +645,7 @@ class JarvisApp {
         btnVoice.classList.remove('listening');
         this.coreVisualizer.setStatus('normal');
       } else if (state === 'error') {
+        soundFX.playAlert();
         btnVoice.classList.remove('listening');
         this.coreVisualizer.setStatus('warning');
         this.uiOverlay.setVoiceFeedback(message || 'Erro de voz.');
@@ -475,6 +660,7 @@ class JarvisApp {
     };
 
     speechService.onError = (errorMsg) => {
+      soundFX.playAlert();
       this.uiOverlay.setVoiceFeedback(errorMsg);
     };
 
@@ -499,6 +685,7 @@ class JarvisApp {
   private async triggerCommand(params: { command_id?: string; raw_phrase?: string }) {
     try {
       const res = await api.executeCommand(params);
+      soundFX.playSuccessTone();
       this.speakFeedback(res.spoken_feedback);
       this.uiOverlay.setVoiceFeedback(res.spoken_feedback);
 
@@ -506,33 +693,33 @@ class JarvisApp {
       if (res.ui_action === 'open_panel_home') {
         this.uiOverlay.switchTab('home');
         this.spatialPanels.setVisible('home', true);
-      }
-      if (res.ui_action === 'open_panel_proxmox') {
+      } else if (res.ui_action === 'open_panel_proxmox') {
         this.uiOverlay.switchTab('proxmox');
         this.spatialPanels.setVisible('proxmox', true);
-      }
-      if (res.ui_action === 'open_panel_network') {
+      } else if (res.ui_action === 'open_panel_network') {
         this.uiOverlay.switchTab('network');
         this.spatialPanels.setVisible('network', true);
-      }
-      if (res.ui_action === 'open_panel_services') {
+      } else if (res.ui_action === 'open_panel_services') {
         this.uiOverlay.switchTab('services');
-      }
-      if (res.ui_action === 'close_all_panels') {
+      } else if (res.ui_action === 'open_panel_camera') {
+        this.spatialPanels.setVisible('camera', true);
+        this.loadCameraSnapshot();
+      } else if (res.ui_action === 'open_panel_diagnostics') {
+        this.uiOverlay.switchTab('diagnostics');
+        await this.loadDiagnostics();
+      } else if (res.ui_action === 'close_all_panels') {
         this.spatialPanels.setAllVisible(false);
-      }
-      if (res.ui_action === 'show_help') {
+      } else if (res.ui_action === 'show_help') {
         this.uiOverlay.switchTab('commands');
-      }
-      if (res.ui_action === 'refresh_data') {
+      } else if (res.ui_action === 'refresh_data') {
         await this.loadInitialData();
-      }
-      if (res.ui_action === 'stop_listening') {
+      } else if (res.ui_action === 'stop_listening') {
         speechService.stopListening();
       }
 
       this.xrManager.setInteractiveObjects(this.spatialPanels.getInteractiveMeshes());
     } catch (err: any) {
+      soundFX.playAlert();
       const errMsg = err.message || 'Erro ao processar comando';
       this.speakFeedback(errMsg);
       this.uiOverlay.setVoiceFeedback(errMsg);
@@ -548,6 +735,15 @@ class JarvisApp {
     const elapsed = this.clock.getElapsedTime();
 
     this.coreVisualizer.update(delta, elapsed);
+
+    // Pilar 2: Atualização do arrasto e rotação fluida dos painéis 3D no espaço
+    if (this.spatialPanels.isGrabbing()) {
+      this.spatialPanels.updateDragging(
+        (idx) => this.xrManager.getControllerRay(idx),
+        this.camera
+      );
+    }
+
     this.xrManager.update();
     this.renderer.render(this.scene, this.camera);
   }

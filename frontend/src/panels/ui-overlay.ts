@@ -2,13 +2,15 @@
  * Gestor da Interface HUD 2D e Renderização dos Painéis
  */
 import { api } from '../api/client';
+import { soundFX } from '../scene/audio-fx';
 import type {
   DemoStatusData,
   JarvisCommand,
   HomeSummaryData,
   ProxmoxSummaryData,
   DnsSummaryData,
-  ServiceHealthItem
+  ServiceHealthItem,
+  FullDiagnosticsData
 } from '../types';
 
 export class UiOverlayManager {
@@ -24,6 +26,7 @@ export class UiOverlayManager {
   private pveData: ProxmoxSummaryData | null = null;
   private dnsData: DnsSummaryData | null = null;
   private servicesData: ServiceHealthItem[] | null = null;
+  private diagnosticsData: FullDiagnosticsData | null = null;
   private commands: JarvisCommand[] = [];
 
   constructor() {
@@ -37,7 +40,7 @@ export class UiOverlayManager {
   }
 
   private bindEvents() {
-    const tabs = ['home', 'proxmox', 'network', 'services', 'commands'];
+    const tabs = ['home', 'proxmox', 'network', 'services', 'diagnostics', 'commands'];
     tabs.forEach((tab) => {
       const btn = document.getElementById(`btn-tab-${tab}`);
       if (btn) {
@@ -109,6 +112,7 @@ export class UiOverlayManager {
 
   public switchTab(tab: string) {
     this.currentTab = tab;
+    soundFX.playClick();
     document.querySelectorAll('.nav-btn').forEach((btn) => btn.classList.remove('active'));
     const activeBtn = document.getElementById(`btn-tab-${tab}`);
     if (activeBtn) activeBtn.classList.add('active');
@@ -117,7 +121,7 @@ export class UiOverlayManager {
 
   public setConnectionState(status: 'online' | 'offline' | 'error') {
     if (status === 'online') {
-      this.connStatus.textContent = 'ONLINE (REST)';
+      this.connStatus.textContent = 'ONLINE (SSE/REST)';
       this.connStatus.style.color = '#00ff9d';
       this.systemIndicator.className = 'status-pulse-dot';
     } else {
@@ -139,7 +143,8 @@ export class UiOverlayManager {
     homeData?: HomeSummaryData | null,
     pveData?: ProxmoxSummaryData | null,
     dnsData?: DnsSummaryData | null,
-    servicesData?: ServiceHealthItem[] | null
+    servicesData?: ServiceHealthItem[] | null,
+    diagnosticsData?: FullDiagnosticsData | null
   ) {
     this.demoData = demoData;
     this.commands = commands;
@@ -147,6 +152,7 @@ export class UiOverlayManager {
     if (pveData !== undefined) this.pveData = pveData;
     if (dnsData !== undefined) this.dnsData = dnsData;
     if (servicesData !== undefined) this.servicesData = servicesData;
+    if (diagnosticsData !== undefined) this.diagnosticsData = diagnosticsData;
     this.render();
   }
 
@@ -173,6 +179,9 @@ export class UiOverlayManager {
         break;
       case 'services':
         this.renderServices();
+        break;
+      case 'diagnostics':
+        this.renderDiagnostics();
         break;
       case 'commands':
         this.renderCommands();
@@ -497,6 +506,121 @@ export class UiOverlayManager {
         `).join('')}
       </div>
     `;
+  }
+
+  private renderDiagnostics() {
+    const diag = this.diagnosticsData;
+    if (!diag) {
+      this.mainPanel.innerHTML = `
+        <div class="panel-card">
+          <div class="panel-title">
+            <span>DIAGNÓSTICO // HOMELAB</span>
+            <span class="badge-demo">EM TESTE</span>
+          </div>
+          <p class="data-label" style="margin-bottom: 14px;">A recolher métricas de latência e conectividade de todas as integrações...</p>
+          <button class="action-btn" id="btn-run-diag" style="padding: 8px 16px;">🩺 EXECUTAR DIAGNÓSTICO AGORA</button>
+        </div>
+      `;
+      const btn = document.getElementById('btn-run-diag');
+      if (btn) {
+        btn.addEventListener('click', () => {
+          soundFX.playClick();
+          window.dispatchEvent(new CustomEvent('jarvis-run-diagnostics'));
+        });
+      }
+      return;
+    }
+
+    const isAllOk = diag.all_healthy;
+    this.mainPanel.innerHTML = `
+      <div class="panel-card">
+        <div class="panel-title">
+          <span>CENTRAL DE DIAGNÓSTICO // REDE E LATÊNCIA</span>
+          <span class="badge-demo" style="${isAllOk ? 'color: var(--color-success); border-color: var(--color-success); background: rgba(0, 255, 157, 0.1);' : 'color: #ffb700; border-color: #ffb700; background: rgba(255, 183, 0, 0.1);'}">
+            ${isAllOk ? '100% OPERACIONAL' : 'VERIFICAÇÃO NECESSÁRIA'}
+          </span>
+        </div>
+        <p class="data-label" style="margin-bottom: 12px; font-size: 0.75rem;">
+          Bateria de testes de latência e integridade das integrações locais.
+        </p>
+
+        <div style="display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;">
+          <div class="stat-pill" style="font-size: 0.75rem;">
+            <span class="stat-label">AMBIENTE:</span>
+            <span class="stat-val" style="color: #00e5ff;">${diag.system_info.environment.toUpperCase()}</span>
+          </div>
+          <div class="stat-pill" style="font-size: 0.75rem;">
+            <span class="stat-label">AUTENTICAÇÃO:</span>
+            <span class="stat-val" style="color: ${diag.system_info.auth_required ? '#00ff9d' : '#ffb700'};">${diag.system_info.auth_required ? 'ATIVA' : 'DESATIVADA'}</span>
+          </div>
+          <div class="stat-pill" style="font-size: 0.75rem;">
+            <span class="stat-label">HOST:</span>
+            <span class="stat-val" style="color: #fff;">${diag.system_info.hostname}</span>
+          </div>
+        </div>
+
+        ${diag.checks.map(c => {
+          let color = '#00ff9d';
+          let bg = 'rgba(0, 255, 157, 0.15)';
+          if (c.status === 'warning') {
+            color = '#ffb700';
+            bg = 'rgba(255, 183, 0, 0.15)';
+          } else if (c.status === 'error') {
+            color = '#ff3366';
+            bg = 'rgba(255, 51, 102, 0.15)';
+          } else if (c.status === 'disabled') {
+            color = '#7da5c2';
+            bg = 'rgba(125, 165, 194, 0.15)';
+          }
+
+          return `
+            <div class="data-row" style="flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.1);">
+              <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                <span style="font-weight: 700; color: #fff;">${c.service}</span>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  ${c.latency_ms !== null && c.latency_ms !== undefined ? `
+                    <span style="font-size: 0.75rem; color: #00e5ff; font-family: monospace;">⚡ ${c.latency_ms} ms</span>
+                  ` : ''}
+                  <span class="badge-demo" style="color: ${color}; border-color: ${color}; background: ${bg}; padding: 2px 8px; font-size: 0.65rem;">
+                    ${c.status.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--color-text-dim);">
+                ${c.message}
+              </div>
+              ${c.endpoint ? `
+                <div style="font-size: 0.7rem; color: #00e5ff; font-family: monospace;">
+                  ${c.endpoint}
+                </div>
+              ` : ''}
+              ${c.details && c.details.active_url ? `
+                <div style="font-size: 0.68rem; color: var(--color-text-dim);">
+                  URL Ativo: <span style="color: #00ff9d;">${c.details.active_url}</span> | Fallback: <span style="color: #ffb700;">${c.details.fallback_url || 'Nenhum'}</span>
+                </div>
+              ` : ''}
+            </div>
+          `;
+        }).join('')}
+
+        <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 0.7rem; color: var(--color-text-dim);">
+            Última verificação: ${new Date(diag.timestamp).toLocaleTimeString()}
+          </span>
+          <button class="action-btn" id="btn-run-diag" style="padding: 6px 14px; font-size: 0.8rem;">
+            🩺 REEXECUTAR TESTE
+          </button>
+        </div>
+      </div>
+    `;
+
+    const btn = document.getElementById('btn-run-diag');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        soundFX.playClick();
+        window.dispatchEvent(new CustomEvent('jarvis-run-diagnostics'));
+      });
+    }
   }
 
   private renderCommands() {

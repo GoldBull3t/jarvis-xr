@@ -11,16 +11,27 @@ O **JARVIS XR** é um centro de operações tridimensional futurista acessível 
 
 ---
 
-## 🚀 Arquitetura Técnica
+## 🚀 Arquitetura Técnica & Os 4 Pilares do JARVIS XR
 
-- **Frontend Espacial:** TypeScript + Three.js + Vite + WebXR Device API (com Passthrough AR a cores, Hand Tracking e mapeamento UV interativo nos hologramas).
-- **Backend Seguro:** FastAPI (Python 3.12) + Pydantic v2 + httpx assíncrono (utilizador não-root).
-- **CI/CD Automatizado:** GitHub Actions compila automaticamente e publica as imagens prontas no GitHub Container Registry (`ghcr.io`).
-- **Opções de Alojamento:**
-  - **Cosmos Cloud (Recomendada):** Como ServApp direta com terminação HTTPS automática do Cosmos.
-  - **VM Dedicada no Proxmox:** Debian 12 com Docker Engine e Caddy para redes isoladas.
-- **Home Assistant 2.0:** Descoberta dinâmica por etiquetas (*Labels* nativas do HA) e sensor de presença em VR para automações de sala real.
-- **Proxmox VE 2.0:** Monitorização de nós, CPU/RAM, pools de armazenamento (ZFS/LVM), estado do último backup e controlo seguro de ciclo de vida de VMs autorizadas (Ligar / Desligar limpo por ACPI / Reiniciar).
+O JARVIS XR opera sobre 4 pilares fundamentais concebidos para máxima robustez e zero dependência de modelos de inteligência artificial ou GPUs dedicadas:
+
+1. **Pilar 1 — Execução Vocal Determinística & Motor Dinâmico de Entidades:**
+   - Reconhecimento vocal determinístico local em `pt-PT` através da Web Speech API.
+   - Motor dinâmico de correspondência fonética e tokenização: aciona qualquer luz, tomada, estore, climatização ou reprodutor descoberto pelo nome amigável, além de gerir máquinas do Proxmox por VMID (ex: *"JARVIS, liga a máquina 100"*).
+   - Efeitos sonoros táticos sintetizados proceduralmente via Web Audio API (sem dependência de ficheiros externos).
+
+2. **Pilar 2 — Interação Espacial 3D & Painel de Vigilância (Meta Quest 3S):**
+   - Agarrar e mover painéis no espaço tridimensional (*Spatial Panel Grabbing*): utilizando os controladores Touch Plus (Grip ou gatilho no cabeçalho) ou pinch com Hand Tracking, arraste e fixe os painéis onde desejar na sua sala em Passthrough AR a cores.
+   - Painel de Vigilância 3D: visualização em tempo real de snapshots JPEG de câmaras do Home Assistant com timestamp e atalhos rápidos.
+
+3. **Pilar 3 — Telemetria em Tempo Real sem Polling (Server-Sent Events - SSE):**
+   - Canal contínuo SSE (`/api/stream/events`) que transmite atualizações instantâneas do Proxmox e Home Assistant assim que ocorrem variações de estado.
+   - Desconexão e reconexão automática resiliente ao entrar ou sair de suspensão no headset.
+
+4. **Pilar 4 — Central Avançada de Diagnóstico & Latência do Homelab:**
+   - Bateria de testes concorrentes de latência (ms) para Proxmox VE, Home Assistant, Pi-hole/AdGuard e resolução DNS interna.
+   - Deteção e comutação transparente entre domínio local e IP de fallback (`HOME_ASSISTANT_FALLBACK_URL`).
+   - Painel dedicado na interface e via voz para inspecionar a saúde da infraestrutura.
 
 ---
 
@@ -88,9 +99,12 @@ jarvis-xr/
 |---|---|
 | *"JARVIS, mostra a casa"* | Abre o painel holográfico da Domótica |
 | *"JARVIS, mostra os servidores"* | Abre o painel do Proxmox VE com CPU/RAM/Storage |
+| *"JARVIS, mostra a câmara"* | Abre o painel holográfico de vigilância e câmara 3D |
+| *"JARVIS, diagnóstico do sistema"* | Abre o painel de diagnóstico e executa testes de latência |
 | *"JARVIS, estado da rede"* | Abre o painel de estatísticas DNS / Pi-hole / AdGuard |
 | *"JARVIS, mostra os serviços"* | Abre o painel de disponibilidade de serviços locais |
 | *"JARVIS, liga a luz do escritório"* | Aciona a entidade autorizada do Home Assistant |
+| *"JARVIS, liga a máquina 100"* | Inicia a VM especificada no Proxmox VE |
 | *"JARVIS, fecha os painéis"* | Recolhe todos os painéis 3D para o núcleo central |
 | *"JARVIS, atualiza os dados"* | Força o recarregamento imediato das métricas |
 | *"JARVIS, para de ouvir"* | Desativa o reconhecimento vocal |
