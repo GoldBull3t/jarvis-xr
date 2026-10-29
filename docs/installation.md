@@ -1,119 +1,77 @@
-# JARVIS XR — Guia de Instalação no Proxmox VE
+# JARVIS XR — Guia de Instalação e Deploy
 
-Este guia detalha os passos para provisionar a VM Debian 12 dedicada no Proxmox VE e colocar a aplicação JARVIS XR em produção.
-
----
-
-## 1. Criação da Máquina Virtual no Proxmox
-
-No interface web do Proxmox VE (porta 8006), selecione o nó e clique em **Create VM**:
-
-1. **General:**
-   - VM ID: ex.: `150`
-   - Name: `jarvis-xr-vm`
-   - Start at boot: Sim (selecionar para arranque automático com o Proxmox).
-
-2. **OS:**
-   - ISO Image: Selecionar a ISO oficial do Debian 12 (ex.: `debian-12.x.x-amd64-netinst.iso`).
-   - Type: Linux / Kernel 6.x.
-
-3. **System:**
-   - Graphic card: Default
-   - SCSI Controller: `VirtIO SCSI single`
-   - Qemu Agent: Ativado (instalar `qemu-guest-agent` no Debian).
-
-4. **Disks:**
-   - Bus/Device: `SCSI`
-   - Storage: `local-lvm` ou `zfs`
-   - Disk size: `20 GB` (mínimo) ou `32 GB`
-   - Discard: Ativado (se estiver em SSD/NVMe).
-
-5. **CPU:**
-   - Sockets: `1`
-   - Cores: `2`
-   - Type: `host` (máxima compatibilidade com aceleração de criptografia e Three.js).
-
-6. **Memory:**
-   - RAM: `2048 MB` (2 GB) ou `4096 MB` (4 GB)
-   - Ballooning: Desativado ou com mínimo de 2048 MB.
-
-7. **Network:**
-   - Bridge: `vmbr0`
-   - Model: `VirtIO (paravirtualized)`
-   - Firewall: Sim.
+O JARVIS XR suporta dois métodos principais de instalação consoante a infraestrutura do seu homelab:
+1. **Opção A (Recomendada): Cosmos Cloud via GitHub Container Registry (GHCR)** — Rápido, sem compilações locais, com certificados SSL automáticos.
+2. **Opção B: Máquina Virtual Dedicada no Proxmox VE** — Isolamento total ao nível de hardware (KVM).
 
 ---
 
-## 2. Configuração do Sistema Operativo e Docker
+## 🌟 Opção A: Deploy no Cosmos Cloud (Recomendada)
 
-Após a instalação base do Debian 12, aceda por SSH à VM como utilizador com privilégios `sudo`:
+Se já tem o **Cosmos Cloud** a correr na sua rede (seja em LXC, VM ou servidor físico):
 
+### 1. Enviar o código para o GitHub
+O repositório já está configurado com **GitHub Actions** para compilar as imagens do frontend e backend e publicá-las automaticamente no `ghcr.io`.
+No seu computador pessoal:
+```powershell
+cd c:\Users\Bernardo\Downloads\jarvis-xr
+git remote add origin https://github.com/GoldBull3t/jarvis-xr.git
+git push -u origin main
+```
+No separador **Actions** do seu repositório GitHub, confirme que o workflow de build terminou com sucesso.
+
+### 2. Criar a ServApp no Cosmos Cloud
+1. Aceda ao painel do **Cosmos Cloud**.
+2. Vá a **ServApps > Create ServApp / Import Compose**.
+3. Copie e cole o conteúdo do ficheiro [`deploy/cosmos-compose.yml`](../deploy/cosmos-compose.yml):
+   - Preencha os IPs e tokens do Proxmox VE e do Home Assistant nas variáveis de ambiente.
+4. Clique em **Save and Start**.
+
+### 3. Criar a Rota HTTPS no Cosmos Cloud
+1. No Cosmos Cloud, vá a **URLs > New URL**:
+   - **URL / Hostname:** ex.: `jarvis.meuhomelab.com`
+   - **Target Container:** selecione o contentor `jarvis-frontend` (porta 80).
+2. O Cosmos Cloud emite o certificado HTTPS válido automaticamente.
+3. Aceda através do Meta Quest Browser diretamente ao endereço HTTPS configurado.
+
+---
+
+## 🖥 Opção B: Provisionamento de VM Dedicada no Proxmox VE
+
+Se preferir isolar o JARVIS numa máquina virtual própria no Proxmox:
+
+### 1. Criação da VM no Proxmox VE (Web UI porta 8006)
+1. **General:** VM ID: `150` | Name: `jarvis-xr-vm` | Start at boot: Sim.
+2. **OS:** ISO do Debian 12 (Bookworm) minimal.
+3. **System:** Graphic card: Default | SCSI Controller: `VirtIO SCSI single` | Qemu Agent: Ativado.
+4. **Disks:** SCSI | Storage: `local-lvm` ou `zfs` | Tamanho: `20 GB` | Discard: Ativado.
+5. **CPU:** 2 vCPUs | Type: `host`.
+6. **Memory:** 2048 MB (2 GB).
+7. **Network:** Bridge: `vmbr0` | Model: `VirtIO (paravirtualized)`.
+
+### 2. Provisionamento Automatizado na VM
+Aceda à consola da VM e execute:
 ```bash
-# 1. Clonar ou transferir o repositório
-git clone <URL_DO_REPOSITORIO> /opt/jarvis-xr
+# 1. Clonar o repositório
+sudo git clone https://github.com/GoldBull3t/jarvis-xr.git /opt/jarvis-xr
 cd /opt/jarvis-xr
+sudo chown -R $USER:$USER /opt/jarvis-xr
 
-# 2. Executar o script de provisionamento automatizado
+# 2. Executar o script oficial de provisionamento (Docker Engine + UFW Firewall)
 sudo bash deploy/scripts/setup-vm.sh
 ```
 
-O script `setup-vm.sh` realiza automaticamente:
-- Atualização dos pacotes Debian.
-- Instalação das chaves GPG e repositório oficial do Docker.
-- Instalação do Docker Engine e plugin Docker Compose v2.
-- Adição do utilizador atual ao grupo `docker`.
-- Configuração de regras na firewall `ufw` (portas 22, 80 e 443).
-
----
-
-## 3. Configuração de Variáveis de Ambiente
-
-Copie o ficheiro de exemplo e gere uma chave de segurança:
-
+### 3. Configuração do Ambiente (.env)
 ```bash
 cp .env.example .env
-
-# Gerar token Bearer aleatório de alta entropia
 sed -i "s/JARVIS_API_KEY=.*/JARVIS_API_KEY=$(openssl rand -hex 24)/" .env
-
-# Editar .env para definir o seu domínio e parâmetros
-nano .env
+nano .env   # Ajuste os IPs e tokens dos seus serviços locais
 ```
 
----
-
-## 4. Inicialização da Aplicação
-
-Inicie os contentores através do Docker Compose:
-
+### 4. Inicialização dos Contentores
 ```bash
 docker compose up -d --build
-```
-
-Verifique o estado dos contentores:
-
-```bash
-docker compose ps
-```
-
-Deverá visualizar 3 serviços ativos:
-- `jarvis-proxy` (portas 0.0.0.0:80->80, 0.0.0.0:443->443)
-- `jarvis-backend` (saudável via healthcheck `/api/health`)
-- `jarvis-frontend` (saudável via healthcheck HTTP)
-
----
-
-## 5. Validação e Testes Automatizados
-
-Execute o script de validação:
-
-```bash
 bash deploy/scripts/validate.sh
 ```
 
-Para verificar os logs em tempo real:
-
-```bash
-docker compose logs -f
-```
-
+O proxy Caddy disponibiliza o acesso HTTPS em `https://<IP_DA_VM>`.

@@ -1,4 +1,4 @@
-# JARVIS XR — Configuração no Meta Quest 3S & WebXR (Fase 3)
+# JARVIS XR — Configuração no Meta Quest 3S & WebXR
 
 Este documento orienta a ligação, calibração espacial e interação imersiva com os Meta Quest 3S utilizando o **Meta Quest Browser**.
 
@@ -12,24 +12,23 @@ O motor Chromium do Meta Quest Browser exige **HTTPS** para autorizar:
 - `Web Speech API` (reconhecimento vocal por microfone)
 - `getUserMedia` (acesso aos sensores de áudio)
 
-### Opção A: Domínio Próprio com DNS-01 Challenge (Recomendada)
-1. Associe um domínio ou subdomínio (ex.: `jarvis.meuhomelab.com`) ao IP local da VM (`192.168.1.150`) através do DNS local (Pi-hole, AdGuard ou `/etc/hosts`).
-2. No Caddy, ative o módulo de DNS-01 (ex.: Cloudflare ou DuckDNS). O Caddy emitirá um certificado Let's Encrypt com chave pública globalmente reconhecida.
-3. **Resultado:** O Quest 3S aceita a ligação imediatamente sem qualquer aviso ou configuração manual de certificados no headset.
+### Opção A: Cosmos Cloud (Recomendada)
+1. Crie o URL da ServApp no seu painel do **Cosmos Cloud** (ex.: `https://jarvis.meuhomelab.com`).
+2. O Cosmos Cloud emite automaticamente um certificado Let's Encrypt com autoridade pública reconhecida.
+3. **Resultado:** O Meta Quest 3S aceita a ligação imediatamente sem qualquer aviso ou necessidade de instalar certificados CA no headset.
 
 ### Opção B: CA Interna do Caddy (`tls internal`)
-Se não utilizar um domínio externo:
-1. O Caddy gera um certificado raiz em `/data/caddy/pki/authorities/local/root.crt` (dentro do volume Docker `caddy_data`).
+Se estiver a correr a VM dedicada com o Caddy em rede isolada:
+1. O Caddy gera um certificado raiz em `/data/caddy/pki/authorities/local/root.crt`.
 2. Extraia o ficheiro:
    ```bash
    docker compose cp jarvis-proxy:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
    ```
-3. Instale o certificado no Quest 3S:
-   - Ligue o Quest ao PC via USB e use o ADB:
-     ```bash
-     adb push caddy-root.crt /sdcard/Download/
-     ```
-   - No headset: aceda a **Definições > Segurança > Instalar certificados de CA** e selecione o ficheiro.
+3. Instale o certificado no Quest 3S via SideQuest ou ADB:
+   ```bash
+   adb push caddy-root.crt /sdcard/Download/
+   ```
+   No headset: vá a **Definições > Segurança > Instalar certificados de CA** e selecione o ficheiro.
 
 ---
 
@@ -39,7 +38,7 @@ Se não utilizar um domínio externo:
 2. Abra a aplicação **Meta Quest Browser**.
 3. Na barra de endereço, introduza o endereço HTTPS configurado.
 4. Clique no botão inferior **INICIAR SESSÃO AR (PASSTHROUGH)**.
-5. Autorize as permissões de câmara e tracking de mãos quando solicitado.
+5. Autorize as permissões de câmara, microfone e tracking de mãos quando solicitado.
 
 ---
 
@@ -48,13 +47,13 @@ Se não utilizar um domínio externo:
 A interface JARVIS XR posiciona os elementos no espaço 3D real da sala:
 
 - **Núcleo Central JARVIS:** Posição `(0, 0, -2.0m)` — Centro visual de telemetria, pulsação e estado do sistema.
-- **Painel Domótica (Home Assistant):** Posição `(-1.4m, +0.05m, -1.8m)` rodado `+20°` para a linha de visão natural à esquerda.
+- **Painel Domótica (Home Assistant):** Posição `(-1.4m, +0.05m, -1.8m)` rodado `+20°` à esquerda.
 - **Painel Virtualização (Proxmox VE):** Posição `(+1.4m, +0.05m, -1.8m)` rodado `-20°` à direita.
 - **Painel Rede & DNS Shield:** Posição `(0.0m, +1.05m, -1.9m)` ligeiramente elevado ao centro.
 
 ---
 
-## 4. Métodos de Interação na Fase 3
+## 4. Métodos de Interação
 
 ### 4.1. Hand Tracking (Mãos Virtuais 3D)
 - O sistema utiliza a `XRHandModelFactory` para renderizar as mãos e articulações virtuais em tempo real.
@@ -76,12 +75,20 @@ A interface JARVIS XR posiciona os elementos no espaço 3D real da sala:
 
 ---
 
-## 5. Checklist de Aceitação da Fase 3
+## 5. Automação de Presença no Headset ("Stark Workshop")
+
+Ao entrar e sair da sessão WebXR, o JARVIS XR notifica o Home Assistant em tempo real:
+- **Entrada em VR/AR:** Ativa `binary_sensor.jarvis_xr_active` e dispara o evento `jarvis_xr_presence` com `active: true`.
+- **Saída de VR/AR:** Desativa o sensor e dispara `active: false`.
+- Permite que a iluminação da sua sala física reaja automaticamente à utilização do headset!
+
+---
+
+## 6. Checklist de Validação no Headset
 
 - [x] O browser deteta suporte a `immersive-ar` ou `immersive-vr` através de `navigator.xr.isSessionSupported()`.
-- [x] O botão de entrada no modo XR atualiza o seu texto dinamicamente consoante as capacidades do headset.
 - [x] Ao entrar em modo AR, o fundo torna-se transparente e o Passthrough a cores do Quest 3S exibe a sala real.
 - [x] Os painéis 3D flutuam fixos a distâncias confortáveis (~1.8m), sem vibrações ou deriva visual.
 - [x] O raio laser aponta e destaca áreas interativas dos painéis com retículo de colisão.
 - [x] O gesto de pinçar (*pinch*) ou o gatilho dos comandos executa a ação correta no painel 3D.
-- [x] Se o WebXR não for suportado (ex.: computador convencional), o modo Desktop mantém rotação por rato e botões 2D sem falhas.
+- [x] A voz em português (`pt-PT`) funciona sem atrasos e com confirmação falada.

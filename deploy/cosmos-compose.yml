@@ -23,12 +23,16 @@ services:
       - PROXMOX_TOKEN_SECRET=00000000-0000-0000-0000-000000000000
       - PROXMOX_VERIFY_SSL=false
       - PROXMOX_TIMEOUT_SECONDS=10
+      - PROXMOX_ALLOWED_VMIDS=101,102
 
       # Integração Home Assistant
       - HOME_ASSISTANT_ENABLED=true
       - HOME_ASSISTANT_URL=http://192.168.1.110:8123
       - HOME_ASSISTANT_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
       - HOME_ASSISTANT_TIMEOUT_SECONDS=5
+      - HOME_ASSISTANT_DISCOVERY_MODE=labels
+      - HOME_ASSISTANT_DISCOVERY_LABEL=jarvis
+      - HOME_ASSISTANT_PRESENCE_ENTITY=input_boolean.jarvis_xr_active
       - HOME_ASSISTANT_ALLOWED_ENTITIES=light.escritorio,switch.tomada_servidor
 
       # Integração DNS Shield (opções: "pihole", "adguard", ou "none")
