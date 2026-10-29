@@ -192,11 +192,41 @@ export class UiOverlayManager {
   }
 
   private renderHome() {
-    const isReal = this.homeData && this.homeData.configured && this.homeData.status === 'operational';
-    const temp = isReal ? (this.homeData!.temperature_celsius ?? 'N/D') : this.demoData!.home.temperature_celsius;
-    const hum = isReal ? (this.homeData!.humidity_percent ?? 'N/D') : this.demoData!.home.humidity_percent;
-    const lightsOn = isReal ? this.homeData!.lights_on : this.demoData!.home.lights_on;
-    const totalLights = isReal ? this.homeData!.total_lights : this.demoData!.home.total_lights;
+    const isConfigured = Boolean(this.homeData && this.homeData.configured);
+    const isReal = isConfigured && this.homeData!.status === 'operational';
+
+    if (isConfigured && !isReal) {
+      this.mainPanel.innerHTML = `
+        <div class="panel-card">
+          <div class="panel-title">
+            <span>DOMÓTICA // HOME ASSISTANT</span>
+            <span class="badge-demo" style="color: #ff3366; border-color: #ff3366; background: rgba(255, 51, 102, 0.15);">
+              ${(this.homeData?.status || 'INACESSÍVEL').toUpperCase()}
+            </span>
+          </div>
+          <p class="data-label" style="color: #ffb700; margin-bottom: 12px; font-size: 0.8rem;">
+            ⚠️ Não foi possível comunicar com o Home Assistant.
+          </p>
+          <div style="font-size: 0.75rem; color: var(--color-text-dim); line-height: 1.5; padding: 12px; background: rgba(255, 51, 102, 0.08); border: 1px dashed rgba(255, 51, 102, 0.3); border-radius: 4px; margin-bottom: 14px;">
+            <strong>Diagnóstico de Conexão:</strong>
+            <ul style="margin: 6px 0 0 16px; padding: 0;">
+              <li>Certifique-se de que a porta <code>:8123</code> está incluída no URL: <code>http://192.168.30.180:8123</code>.</li>
+              <li>Verifique se o token de longa duração gerado no perfil do Home Assistant está correto.</li>
+              <li>Consulte o separador <strong>DIAGNÓSTICO</strong> para testar a conectividade em tempo real.</li>
+            </ul>
+          </div>
+          <button class="action-btn" id="btn-retest-ha" style="padding: 6px 14px; font-size: 0.8rem;">⟳ TESTAR NOVAMENTE</button>
+        </div>
+      `;
+      const btn = document.getElementById('btn-retest-ha');
+      if (btn) btn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('jarvis-reload-data')));
+      return;
+    }
+
+    const temp = isReal ? (this.homeData!.temperature_celsius ?? 'N/D') : (this.demoData?.home?.temperature_celsius ?? 'N/D');
+    const hum = isReal ? (this.homeData!.humidity_percent ?? 'N/D') : (this.demoData?.home?.humidity_percent ?? 'N/D');
+    const lightsOn = isReal ? this.homeData!.lights_on : (this.demoData?.home?.lights_on ?? 0);
+    const totalLights = isReal ? this.homeData!.total_lights : (this.demoData?.home?.total_lights ?? 0);
     const coversOpen = isReal ? (this.homeData!.covers_open ?? 0) : 0;
     const totalCovers = isReal ? (this.homeData!.total_covers ?? 0) : 0;
     const mediaActive = isReal ? (this.homeData!.media_players_active ?? 0) : 0;
@@ -210,7 +240,7 @@ export class UiOverlayManager {
           state: e.state,
           type: e.domain
         }))
-      : this.demoData!.home.entities;
+      : (this.demoData?.home?.entities || []);
 
     this.mainPanel.innerHTML = `
       <div class="panel-card">
@@ -294,14 +324,44 @@ export class UiOverlayManager {
   }
 
   private renderProxmox() {
-    const isReal = this.pveData && this.pveData.configured && this.pveData.status === 'operational';
-    const cluster = isReal ? this.pveData!.cluster_name : this.demoData!.proxmox.cluster_name;
-    const nodesOnline = isReal ? this.pveData!.nodes_online : this.demoData!.proxmox.nodes_online;
-    const totalNodes = isReal ? this.pveData!.total_nodes : this.demoData!.proxmox.total_nodes;
-    const cpu = isReal ? this.pveData!.cpu_usage_percent : this.demoData!.proxmox.cpu_usage_percent;
-    const ramUsed = isReal ? this.pveData!.ram_used_gb : this.demoData!.proxmox.ram_used_gb;
-    const ramTotal = isReal ? this.pveData!.ram_total_gb : this.demoData!.proxmox.ram_total_gb;
-    const ramPercent = isReal ? this.pveData!.ram_usage_percent : this.demoData!.proxmox.ram_usage_percent;
+    const isConfigured = Boolean(this.pveData && this.pveData.configured);
+    const isReal = isConfigured && this.pveData!.status === 'operational';
+
+    if (isConfigured && !isReal) {
+      this.mainPanel.innerHTML = `
+        <div class="panel-card">
+          <div class="panel-title">
+            <span>VIRTUALIZAÇÃO // PROXMOX VE</span>
+            <span class="badge-demo" style="color: #ff3366; border-color: #ff3366; background: rgba(255, 51, 102, 0.15);">
+              ${(this.pveData?.status || 'FALHA DE ACESSO').toUpperCase()}
+            </span>
+          </div>
+          <p class="data-label" style="color: #ffb700; margin-bottom: 12px; font-size: 0.8rem;">
+            ⚠️ Falha ao comunicar com a API do Proxmox VE.
+          </p>
+          <div style="font-size: 0.75rem; color: var(--color-text-dim); line-height: 1.5; padding: 12px; background: rgba(255, 51, 102, 0.08); border: 1px dashed rgba(255, 51, 102, 0.3); border-radius: 4px; margin-bottom: 14px;">
+            <strong>Diagnóstico de Autenticação (HTTP 401):</strong>
+            <ul style="margin: 6px 0 0 16px; padding: 0;">
+              <li>Certifique-se de que o <code>PROXMOX_TOKEN_ID</code> é <code>jarvis-monitoring@pve!jarvis-token</code> (sem <code>@pam</code> duplicado).</li>
+              <li>Confirme que o utilizador <code>jarvis-monitoring@pve</code> tem permissão <code>PVEAuditor</code> no Proxmox.</li>
+              <li>Consulte o separador <strong>DIAGNÓSTICO</strong> para inspecionar os detalhes do teste de rede.</li>
+            </ul>
+          </div>
+          <button class="action-btn" id="btn-retest-pve" style="padding: 6px 14px; font-size: 0.8rem;">⟳ TESTAR NOVAMENTE</button>
+        </div>
+      `;
+      const btn = document.getElementById('btn-retest-pve');
+      if (btn) btn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('jarvis-reload-data')));
+      return;
+    }
+
+    const cluster = isReal ? this.pveData!.cluster_name : (this.demoData?.proxmox?.cluster_name ?? 'pve');
+    const nodesOnline = isReal ? this.pveData!.nodes_online : (this.demoData?.proxmox?.nodes_online ?? 0);
+    const totalNodes = isReal ? this.pveData!.total_nodes : (this.demoData?.proxmox?.total_nodes ?? 0);
+    const cpu = isReal ? this.pveData!.cpu_usage_percent : (this.demoData?.proxmox?.cpu_usage_percent ?? 0);
+    const ramUsed = isReal ? this.pveData!.ram_used_gb : (this.demoData?.proxmox?.ram_used_gb ?? 0);
+    const ramTotal = isReal ? this.pveData!.ram_total_gb : (this.demoData?.proxmox?.ram_total_gb ?? 0);
+    const ramPercent = isReal ? this.pveData!.ram_usage_percent : (this.demoData?.proxmox?.ram_usage_percent ?? 0);
 
     const vms = isReal
       ? this.pveData!.vms.map(v => ({
@@ -311,7 +371,7 @@ export class UiOverlayManager {
           cpu: v.cpu,
           type: v.type
         }))
-      : this.demoData!.proxmox.vms.map(v => ({ ...v, type: 'qemu' }));
+      : (this.demoData?.proxmox?.vms || []).map(v => ({ ...v, type: 'qemu' }));
 
     this.mainPanel.innerHTML = `
       <div class="panel-card">

@@ -40,12 +40,26 @@ class HomeAssistantAdapter(BaseAdapter):
         Se o URL primário falhar (ex: DNS resolution ou timeout), comuta automaticamente para o URL de contingência.
         """
         urls_to_try = []
+        raw_candidates = []
         if self.active_url:
-            urls_to_try.append(self.active_url)
-        if self.fallback_url and self.fallback_url not in urls_to_try:
-            urls_to_try.append(self.fallback_url)
-        if self.primary_url and self.primary_url not in urls_to_try:
-            urls_to_try.append(self.primary_url)
+            raw_candidates.append(self.active_url)
+        if self.primary_url:
+            raw_candidates.append(self.primary_url)
+        if self.fallback_url:
+            raw_candidates.append(self.fallback_url)
+
+        for u in raw_candidates:
+            if not u:
+                continue
+            u_clean = u.strip().rstrip("/")
+            if u_clean not in urls_to_try:
+                urls_to_try.append(u_clean)
+            # Se for endereço sem porta especificada, tenta também a porta padrão do Home Assistant (:8123)
+            scheme, sep, rest = u_clean.partition("://")
+            if ":" not in rest:
+                u_8123 = f"{scheme}://{rest}:8123"
+                if u_8123 not in urls_to_try:
+                    urls_to_try.append(u_8123)
 
         last_error = None
         for candidate_url in urls_to_try:
@@ -54,13 +68,17 @@ class HomeAssistantAdapter(BaseAdapter):
             try:
                 async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
                     res = await client.request(method, full_url, headers=headers, **kwargs)
-                    if self.active_url != candidate_url:
-                        logger.info(f"Home Assistant conectado com sucesso via contingência: {candidate_url}")
-                        self.active_url = candidate_url
-                    return res
+                    if res.status_code < 500:
+                        if self.active_url != candidate_url:
+                            logger.info(f"Home Assistant conectado com sucesso via: {candidate_url}")
+                            self.active_url = candidate_url
+                        return res
+                    else:
+                        logger.warning(f"Home Assistant em '{candidate_url}' retornou HTTP {res.status_code}")
             except Exception as e:
                 last_error = e
-                logger.warning(f"Falha de ligação ao Home Assistant em '{candidate_url}': {e}")
+                err_msg = f"{type(e).__name__}: {str(e)}" if str(e) else type(e).__name__
+                logger.warning(f"Falha de ligação ao Home Assistant em '{candidate_url}': {err_msg}")
                 continue
 
         if last_error:

@@ -35,12 +35,14 @@ class ProxmoxAdapter(BaseAdapter):
     def _get_headers(self) -> Dict[str, str]:
         """Gera o cabeçalho oficial de autenticação PVEAPIToken com normalização inteligente de realm."""
         token_id = self.token_id.strip()
-        # Normaliza caso haja duplicidade de realms (ex: user@pve@pam!token)
+        # Normaliza caso haja duplicidade acidental de realms (ex: user@pve@pam!token)
         if "@" in token_id and "!" in token_id:
             user_part, token_name = token_id.split("!", 1)
             parts = user_part.split("@")
             if len(parts) > 2:
-                token_id = f"{parts[0]}@{parts[-1]}!{token_name}"
+                # Se 'pve' está nos realms, o realm oficial do Proxmox VE é pve (onde os API tokens são criados)
+                realm = "pve" if "pve" in parts[1:] else parts[1]
+                token_id = f"{parts[0]}@{realm}!{token_name}"
 
         return {
             "Authorization": f"PVEAPIToken={token_id}={self.token_secret.strip()}",
