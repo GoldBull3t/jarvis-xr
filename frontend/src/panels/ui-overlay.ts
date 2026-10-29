@@ -239,7 +239,10 @@ export class UiOverlayManager {
     const isHttps = window.location.protocol === 'https:';
     let haUrl = this.selectedHaUrl;
     if (!haUrl) {
-      if (isHttps && this.homeData?.fallback_url && this.homeData.fallback_url.startsWith('https://')) {
+      const savedCustomUrl = localStorage.getItem('jarvis_ha_custom_url');
+      if (savedCustomUrl) {
+        haUrl = savedCustomUrl;
+      } else if (isHttps && this.homeData?.fallback_url && this.homeData.fallback_url.startsWith('https://')) {
         haUrl = this.homeData.fallback_url;
       } else if (this.homeData?.active_url_used) {
         haUrl = this.homeData.active_url_used;
@@ -353,6 +356,21 @@ export class UiOverlayManager {
 
         ${this.homeViewMode === 'native' ? `
           <!-- MODO 1: WEBVIEW NATIVO COMPLETO DO HOME ASSISTANT -->
+          <!-- Barra de Navegação e Configuração de URL do Quadro -->
+          <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 8px; background: rgba(0, 229, 255, 0.05); padding: 6px 10px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.2); flex-wrap: wrap;">
+            <span style="font-size: 0.72rem; color: var(--color-primary-cyan); font-weight: bold;">ENDEREÇO:</span>
+            <input 
+              type="text" 
+              id="input-ha-iframe-url" 
+              value="${haUrl}" 
+              placeholder="https://ha.bernaslab.top ou http://192.168.30.180:8123" 
+              style="flex: 1; min-width: 220px; background: rgba(5, 11, 20, 0.85); border: 1px solid rgba(0, 229, 255, 0.3); color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-family: monospace;"
+            />
+            <button class="action-btn" id="btn-ha-apply-url" style="padding: 4px 10px; font-size: 0.72rem;">CARREGAR</button>
+            <button class="action-btn" id="btn-ha-quick-domain" style="padding: 4px 8px; font-size: 0.68rem;" title="Usar Domínio HTTPS Cosmos">DOMÍNIO HTTPS</button>
+            <button class="action-btn" id="btn-ha-quick-local" style="padding: 4px 8px; font-size: 0.68rem;" title="Usar IP Local">LAN :8123</button>
+          </div>
+
           <div style="position: relative; width: 100%; height: 75vh; min-height: 580px; border-radius: 6px; overflow: hidden; border: 1px solid rgba(0, 229, 255, 0.4); background: #0c1017; box-shadow: 0 0 25px rgba(0, 229, 255, 0.15);">
             <iframe
               id="ha-native-iframe"
@@ -362,13 +380,14 @@ export class UiOverlayManager {
             ></iframe>
           </div>
 
-          <div style="margin-top: 8px; padding: 8px 12px; background: rgba(0, 229, 255, 0.05); border: 1px dashed rgba(0, 229, 255, 0.25); border-radius: 4px; font-size: 0.72rem; color: var(--color-text-dim); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-            <div>
-              <strong>Conexão:</strong> <span style="color: var(--color-primary-cyan); font-family: monospace;">${haUrl}</span>
-            </div>
-            <div style="font-size: 0.68rem;">
-              💡 Dica: Se o quadro aparecer bloqueado, certifique-se de ter <code>http: use_x_frame_options: false</code> no seu <code>configuration.yaml</code> do Home Assistant.
-            </div>
+          <!-- Diagnóstico Dinâmico de Erro e Instruções de Desbloqueio -->
+          <div style="margin-top: 8px; padding: 10px 12px; background: rgba(255, 183, 0, 0.07); border: 1px solid rgba(255, 183, 0, 0.3); border-radius: 4px; font-size: 0.72rem; color: #ffca4a;">
+            <strong>⚠️ "ha.bernaslab.top recusou estabelecer ligação"? Solução em 2 passos:</strong>
+            <ul style="margin: 6px 0 0 16px; padding: 0; line-height: 1.55; color: var(--color-text-dim);">
+              <li><strong style="color: #fff;">1. Cosmos Reverse Proxy (Causa Principal):</strong> No painel do Cosmos (<code style="color: var(--color-primary-cyan);">192.168.30.237</code>), vá a <em>URL Routes</em> &gt; edite a rota de <em>ha.bernaslab.top</em> &gt; <em>Security / Smart-Shield</em> &gt; <strong>desative "Prevent Clickjacking"</strong> (o Cosmos injeta <code>frame-ancestors 'self'</code> e bloqueia iframes).</li>
+              <li><strong style="color: #fff;">2. Reiniciar o Core do Home Assistant:</strong> Depois de editar o <code>configuration.yaml</code> com <code>use_x_frame_options: false</code>, tem de <strong>reiniciar o Home Assistant</strong> (Definições &gt; Sistema &gt; Reiniciar) para o servidor libertar a restrição.</li>
+              <li><strong style="color: #fff;">3. Acesso Imediato:</strong> Pode alternar a qualquer momento para o <strong style="color: var(--color-primary-cyan);">🌌 HUD HOLOGRÁFICO TÁTICO</strong> acima (funciona 100% diretamente via API do backend sem bloqueios de browser).</li>
+            </ul>
           </div>
         ` : `
           <!-- MODO 2: HUD HOLOGRÁFICO TÁTICO COM CARTÕES LOVELACE MUSHROOM -->
@@ -447,6 +466,43 @@ export class UiOverlayManager {
         soundFX.playClick();
         this.homeViewMode = 'tactical';
         this.renderHome();
+      });
+    }
+
+    // Interatividade da Barra de Endereço Customizado do HA
+    const inputIframeUrl = document.getElementById('input-ha-iframe-url') as HTMLInputElement | null;
+    const btnApplyUrl = document.getElementById('btn-ha-apply-url');
+    const btnQuickDomain = document.getElementById('btn-ha-quick-domain');
+    const btnQuickLocal = document.getElementById('btn-ha-quick-local');
+
+    const updateCustomUrl = (newUrl: string) => {
+      soundFX.playClick();
+      const trimmed = newUrl.trim();
+      if (trimmed) {
+        this.selectedHaUrl = trimmed;
+        localStorage.setItem('jarvis_ha_custom_url', trimmed);
+        this.renderHome();
+      }
+    };
+
+    if (btnApplyUrl && inputIframeUrl) {
+      btnApplyUrl.addEventListener('click', () => updateCustomUrl(inputIframeUrl.value));
+    }
+    if (inputIframeUrl) {
+      inputIframeUrl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') updateCustomUrl(inputIframeUrl.value);
+      });
+    }
+    if (btnQuickDomain) {
+      btnQuickDomain.addEventListener('click', () => {
+        const domainUrl = this.homeData?.fallback_url || 'https://ha.bernaslab.top';
+        updateCustomUrl(domainUrl);
+      });
+    }
+    if (btnQuickLocal) {
+      btnQuickLocal.addEventListener('click', () => {
+        const localUrl = this.homeData?.primary_url || 'http://192.168.30.180:8123';
+        updateCustomUrl(localUrl);
       });
     }
 
