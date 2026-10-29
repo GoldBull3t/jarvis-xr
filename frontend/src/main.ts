@@ -154,6 +154,10 @@ class JarvisApp {
         this.loadCameraSnapshot();
       } else if (action === 'refresh_camera') {
         this.loadCameraSnapshot();
+      } else if (action === 'prev_camera') {
+        this.cycleCamera('prev');
+      } else if (action === 'next_camera') {
+        this.cycleCamera('next');
       } else if (action === 'open_camera_url') {
         const url = this.spatialPanels.getCameraSnapshotUrl();
         if (url) window.open(url, '_blank');
@@ -206,11 +210,11 @@ class JarvisApp {
       }
     }) as EventListener);
 
-    // Escuta evento de alternância de entidade (Home Assistant)
+    // Escuta evento de alternância ou controlo detalhado de entidade (Home Assistant)
     window.addEventListener('jarvis-action-entity', (async (e: any) => {
-      const { entityId, domain } = e.detail || {};
+      const { entityId, domain, action, payload } = e.detail || {};
       if (entityId) {
-        await this.toggleEntity(entityId, domain);
+        await this.handleEntityAction(entityId, domain, action, payload);
       }
     }) as EventListener);
 
@@ -515,30 +519,105 @@ class JarvisApp {
     }
   }
 
-  private async toggleEntity(entityId: string, domain?: string) {
+  private cycleCamera(direction: 'next' | 'prev') {
+    if (!this.homeData?.authorized_entities) return;
+    const cameras = this.homeData.authorized_entities.filter(e => e.domain === 'camera');
+    if (cameras.length === 0) return;
+
+    let currentIndex = cameras.findIndex(c => c.entity_id === this.activeCameraEntityId);
+    if (currentIndex === -1) currentIndex = 0;
+
+    if (direction === 'next') {
+      currentIndex = (currentIndex + 1) % cameras.length;
+    } else {
+      currentIndex = (currentIndex - 1 + cameras.length) % cameras.length;
+    }
+
+    const nextCam = cameras[currentIndex];
+    this.activeCameraEntityId = nextCam.entity_id;
+    this.loadCameraSnapshot();
+    soundFX.playClick();
+    this.speakFeedback(`A comutar para ${nextCam.friendly_name}`);
+  }
+
+  private async handleEntityAction(entityId: string, domain?: string, action: string = 'toggle', payload?: any) {
     try {
-      let res;
-      if (domain === 'switch' || entityId.startsWith('switch.')) {
-        res = await api.actionSwitch(entityId, 'toggle');
-      } else if (domain === 'cover' || entityId.startsWith('cover.')) {
-        res = await api.actionCover({ entity_id: entityId, action: 'toggle' });
-      } else if (domain === 'media_player' || entityId.startsWith('media_player.')) {
-        res = await api.actionMediaPlayer({ entity_id: entityId, action: 'play_pause' });
-      } else if (domain === 'climate' || entityId.startsWith('climate.')) {
-        res = await api.actionClimate({ entity_id: entityId, action: 'set_hvac_mode', hvac_mode: 'heat' });
-      } else if (domain === 'camera' || entityId.startsWith('camera.')) {
+      let res: any;
+      const d = domain || entityId.split('.')[0];
+
+      if (action === 'view_in_3d' || (d === 'camera' && action === 'toggle')) {
         this.activeCameraEntityId = entityId;
         this.spatialPanels.setVisible('camera', true);
         this.loadCameraSnapshot();
-        this.speakFeedback('A carregar imagem instantânea da câmara.');
+        soundFX.playSuccessTone();
+        this.speakFeedback('A carregar imagem instantânea da câmara no painel 3D.');
         return;
+      }
+
+      if (d === 'light') {
+        res = await api.actionLight({
+          entity_id: entityId,
+          action: action as any,
+          brightness: payload?.brightness,
+          color_temp: payload?.color_temp
+        });
+      } else if (d === 'switch' || d === 'input_boolean') {
+        res = await api.actionSwitch(entityId, action);
+      } else if (d === 'climate') {
+        res = await api.actionClimate({
+          entity_id: entityId,
+          action: action as any,
+          temperature: payload?.temperature,
+          hvac_mode: payload?.hvac_mode,
+          fan_mode: payload?.fan_mode
+        });
+      } else if (d === 'cover') {
+        res = await api.actionCover({
+          entity_id: entityId,
+          action: action as any,
+          position: payload?.position
+        });
+      } else if (d === 'media_player') {
+        res = await api.actionMediaPlayer({
+          entity_id: entityId,
+          action: action as any,
+          volume_level: payload?.volume_level
+        });
+      } else if (d === 'scene') {
+        res = await api.activateScene(entityId);
+      } else if (d === 'script') {
+        res = await api.executeScript(entityId, payload?.variables);
+      } else if (d === 'lock') {
+        res = await api.actionLock({
+          entity_id: entityId,
+          action: action as any,
+          code: payload?.code
+        });
+      } else if (d === 'fan') {
+        res = await api.actionFan({
+          entity_id: entityId,
+          action: action as any,
+          percentage: payload?.percentage
+        });
+      } else if (d === 'vacuum') {
+        res = await api.actionVacuum({
+          entity_id: entityId,
+          action: action as any
+        });
+      } else if (d === 'automation') {
+        res = await api.actionAutomation({
+          entity_id: entityId,
+          action: action as any
+        });
       } else {
-        res = await api.actionLight(entityId, 'toggle');
+        res = await api.actionSwitch(entityId, action);
       }
 
       soundFX.playSuccessTone();
-      this.speakFeedback(res.message);
-      this.uiOverlay.setVoiceFeedback(res.message);
+      if (res && res.message) {
+        this.speakFeedback(res.message);
+        this.uiOverlay.setVoiceFeedback(res.message);
+      }
       await this.loadInitialData();
     } catch (err: any) {
       soundFX.playAlert();
@@ -546,6 +625,10 @@ class JarvisApp {
       this.speakFeedback(msg);
       this.uiOverlay.setVoiceFeedback(msg);
     }
+  }
+
+  private async toggleEntity(entityId: string, domain?: string) {
+    return this.handleEntityAction(entityId, domain, 'toggle');
   }
 
   private async handleVmAction(vmid: number, action: 'start' | 'shutdown' | 'reboot', vmName?: string) {
@@ -577,14 +660,19 @@ class JarvisApp {
     if (home && home.configured && home.status === 'operational') {
       const temp = home.temperature_celsius ?? 'N/D';
       const hum = home.humidity_percent ?? 'N/D';
-      const entLines = home.authorized_entities.slice(0, 2).map(
-        e => `${e.friendly_name}: [${e.state.toUpperCase()}]`
-      );
+      const powerStr = home.power_consumption_watts !== null && home.power_consumption_watts !== undefined
+        ? ` | Potência: ${home.power_consumption_watts.toFixed(0)}W`
+        : '';
+      const secStr = home.binary_sensors_alert && home.binary_sensors_alert > 0
+        ? `⚠️ ${home.binary_sensors_alert} Alerta(s)`
+        : '🟢 Segura';
 
-      this.spatialPanels.updatePanelContent('home', 'DOMÓTICA // HOME ASSISTANT [REAL]', [
-        `Temp: ${temp} °C | Hum: ${hum}%`,
-        `Luzes Ativas: ${home.lights_on} / ${home.total_lights} | Switches: ${home.switches_on}`,
-        ...entLines
+      this.spatialPanels.updatePanelContent('home', 'DOMÓTICA // HOME ASSISTANT TOTAL', [
+        `Ambiente: ${temp} °C | Hum: ${hum}%${powerStr}`,
+        `Luzes: ${home.lights_on}/${home.total_lights} | Tomadas: ${home.switches_on}/${home.total_switches}`,
+        `Segurança Perimétrica: ${secStr}`,
+        `Divisões: ${(home.areas || []).slice(0, 3).join(', ') || 'Global'}`,
+        `Câmaras: ${home.cameras_count || 0} | Cenas: ${home.scenes_count || 0}`
       ]);
     } else {
       this.spatialPanels.updatePanelContent('home', 'DOMÓTICA // HOME [DEMO]', [

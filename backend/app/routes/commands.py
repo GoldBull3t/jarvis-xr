@@ -206,15 +206,65 @@ async def match_dynamic_entity_action(raw_phrase: str, confirmed: bool = False) 
             ui_action="refresh_data"
         )
 
-    # 2. Padrões de Ação no Home Assistant
+    # 2. Consultas Rápidas de Segurança e Sensores do Homelab
+    if re.search(r"(?:relatorio|estado|como esta|verificar|tem alguma|ha alguma)\s+(?:de\s+)?(?:seguranca|portas|janelas|porta|janela)", text):
+        if ha_adapter.is_configured():
+            summary = await ha_adapter.get_summary()
+            alerts = summary.binary_sensors_alert
+            if alerts > 0:
+                spoken = f"Alerta de segurança. Estão detetadas {alerts} portas ou janelas abertas."
+            else:
+                spoken = "Segurança perimétrica normal. Todas as portas e janelas autorizadas estão fechadas."
+            return CommandExecuteResult(
+                command_id="cmd_security_report",
+                action_executed="Relatório de Segurança",
+                spoken_feedback=spoken,
+                ui_action="open_panel_home"
+            )
+
+    # 3. Consulta de Energia e Potência Instantânea
+    if re.search(r"(?:quanto|qual)\s+(?:estamos\s+a\s+consumir|e\s+o\s+consumo|consumo|gasto\s+de\s+energia)", text):
+        if ha_adapter.is_configured():
+            summary = await ha_adapter.get_summary()
+            power = summary.power_consumption_watts
+            if power is not None:
+                spoken = f"O consumo de energia instantâneo atual é de {power:.0f} Watts."
+            else:
+                spoken = "Resumo energético: múltiplos dispositivos ativos, sem medidor de potência agregado detetado."
+            return CommandExecuteResult(
+                command_id="cmd_energy_report",
+                action_executed="Consulta de Energia",
+                spoken_feedback=spoken,
+                ui_action="open_panel_home"
+            )
+
+    # 4. Ajuste Direto de Climatização por Voz (ex: "definir temperatura para 21 graus")
+    clim_match = re.search(r"(?:define|definir|muda|mudar|coloca|colocar|ajusta|ajustar)\s+(?:a\s+)?(?:temperatura|clima|termostato|ac|ar condicionado)\s+(?:para\s+)?(\d+(?:[.,]\d+)?)\s*(?:graus)?", text)
+    if clim_match and ha_adapter.is_configured():
+        target_temp = float(clim_match.group(1).replace(",", "."))
+        entities = await ha_adapter.get_entities()
+        climates = [e for e in entities if e.domain == "climate"]
+        if climates:
+            target_entity = climates[0]
+            res = await ha_adapter.control_climate(target_entity.entity_id, "set_temperature", temperature=target_temp)
+            return CommandExecuteResult(
+                command_id="cmd_climate_temp",
+                action_executed=f"Ajuste de Temperatura para {target_temp}°C",
+                spoken_feedback=f"Temperatura de {target_entity.friendly_name} definida para {target_temp} graus." if res.success else f"Falha ao regular climatização: {res.message}",
+                ui_action="refresh_data"
+            )
+
+    # 5. Padrões de Ação no Home Assistant
     intent = None
     target_str = ""
 
     patterns = [
-        (r"^(?:liga|ligar|acende|acender|ativa|ativar)\s+(.+)", "turn_on"),
+        (r"^(?:liga|ligar|acende|acender|ativa|ativar|executa|executar|modo)\s+(.+)", "turn_on"),
         (r"^(?:desliga|desligar|apaga|apagar|desativa|desativar)\s+(.+)", "turn_off"),
         (r"^(?:abre|abrir|sobe|subir)\s+(.+)", "cover_open"),
         (r"^(?:fecha|fechar|desce|descer)\s+(.+)", "cover_close"),
+        (r"^(?:tranca|trancar)\s+(.+)", "lock"),
+        (r"^(?:destranca|destrancar)\s+(.+)", "unlock"),
         (r"^(?:pausa|pausar|para|parar)\s+(.+)", "media_pause"),
         (r"^(?:toca|tocar|reproduz|reproduzir|retoma|retomar)\s+(.+)", "media_play")
     ]
@@ -224,6 +274,8 @@ async def match_dynamic_entity_action(raw_phrase: str, confirmed: bool = False) 
         if m:
             intent = act
             target_str = m.group(1).strip()
+            # Limpa prefixos como "o modo ", "a cena ", "a luz ", "o "
+            target_str = re.sub(r"^(?:a\s+cena|o\s+modo|a\s+luz|o\s+estore|a\s+tomada)\s+", "", target_str)
             break
 
     if not intent or not target_str or not ha_adapter.is_configured():
@@ -267,17 +319,26 @@ async def match_dynamic_entity_action(raw_phrase: str, confirmed: bool = False) 
             res = await ha_adapter.control_light(entity_id, "on")
         elif domain in ["switch", "input_boolean"]:
             res = await ha_adapter.control_switch(entity_id, "on")
+        elif domain == "scene":
+            res = await ha_adapter.activate_scene(entity_id)
+        elif domain == "script":
+            res = await ha_adapter.activate_script(entity_id)
         elif domain == "cover":
             res = await ha_adapter.control_cover(entity_id, "open")
         elif domain == "media_player":
             res = await ha_adapter.control_media_player(entity_id, "play")
+        elif domain == "fan":
+            res = await ha_adapter.control_fan(entity_id, "turn_on")
+        elif domain == "vacuum":
+            res = await ha_adapter.control_vacuum(entity_id, "start")
         else:
             res = await ha_adapter.control_switch(entity_id, "on")
 
+        action_label = "ativada" if domain in ["scene", "script"] else "ligada"
         return CommandExecuteResult(
             command_id="cmd_ha_dynamic",
-            action_executed=f"Ligar {feedback_name}",
-            spoken_feedback=f"{feedback_name} ligado com sucesso." if res.success else f"Falha ao ligar {feedback_name}.",
+            action_executed=f"Ligar/Ativar {feedback_name}",
+            spoken_feedback=f"{feedback_name} {action_label} com sucesso." if res.success else f"Falha ao acionar {feedback_name}.",
             ui_action="refresh_data",
             data={"entity_id": entity_id, "state": res.new_state}
         )
@@ -291,6 +352,10 @@ async def match_dynamic_entity_action(raw_phrase: str, confirmed: bool = False) 
             res = await ha_adapter.control_cover(entity_id, "close")
         elif domain == "media_player":
             res = await ha_adapter.control_media_player(entity_id, "pause")
+        elif domain == "fan":
+            res = await ha_adapter.control_fan(entity_id, "turn_off")
+        elif domain == "vacuum":
+            res = await ha_adapter.control_vacuum(entity_id, "return_to_base")
         else:
             res = await ha_adapter.control_switch(entity_id, "off")
 
@@ -300,6 +365,17 @@ async def match_dynamic_entity_action(raw_phrase: str, confirmed: bool = False) 
             spoken_feedback=f"{feedback_name} desligado com sucesso." if res.success else f"Falha ao desligar {feedback_name}.",
             ui_action="refresh_data",
             data={"entity_id": entity_id, "state": res.new_state}
+        )
+
+    elif intent in ["lock", "unlock"]:
+        act = "lock" if intent == "lock" else "unlock"
+        res = await ha_adapter.control_lock(entity_id, act)
+        word = "trancada" if act == "lock" else "destrancada"
+        return CommandExecuteResult(
+            command_id="cmd_ha_dynamic",
+            action_executed=f"Fechadura {feedback_name}",
+            spoken_feedback=f"{feedback_name} {word} com sucesso." if res.success else f"Falha na fechadura: {res.message}",
+            ui_action="refresh_data"
         )
 
     elif intent in ["cover_open", "cover_close"]:

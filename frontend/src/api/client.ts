@@ -11,9 +11,15 @@ import type {
   HomeSummaryData,
   EntityState,
   ActionExecutionResult,
+  LightActionParams,
   ClimateActionParams,
   CoverActionParams,
   MediaPlayerActionParams,
+  LockActionParams,
+  FanActionParams,
+  VacuumActionParams,
+  AutomationActionParams,
+  CameraEntityInfo,
   ProxmoxSummaryData,
   DnsSummaryData,
   ServiceHealthItem,
@@ -150,12 +156,19 @@ export class JarvisApiClient {
   }
 
   /**
-   * Aciona uma luz autorizada no Home Assistant
+   * Aciona uma luz com regulação de brilho ou parâmetros avançados
    */
-  public async actionLight(entityId: string, action: string = 'toggle', brightness?: number): Promise<ActionExecutionResult> {
+  public async actionLight(
+    entityIdOrParams: string | LightActionParams,
+    action: 'on' | 'off' | 'toggle' = 'toggle',
+    brightness?: number
+  ): Promise<ActionExecutionResult> {
+    const payload = typeof entityIdOrParams === 'string'
+      ? { entity_id: entityIdOrParams, action, brightness }
+      : entityIdOrParams;
     return this.request<ActionExecutionResult>('/home/actions/light', {
       method: 'POST',
-      body: JSON.stringify({ entity_id: entityId, action, brightness })
+      body: JSON.stringify(payload)
     });
   }
 
@@ -197,6 +210,80 @@ export class JarvisApiClient {
       method: 'POST',
       body: JSON.stringify(params)
     });
+  }
+
+  /**
+   * Ativa uma cena de domótica autorizada
+   */
+  public async activateScene(entityId: string): Promise<ActionExecutionResult> {
+    return this.request<ActionExecutionResult>('/home/actions/scene', {
+      method: 'POST',
+      body: JSON.stringify({ entity_id: entityId })
+    });
+  }
+
+  /**
+   * Executa um script de domótica do Home Assistant
+   */
+  public async executeScript(entityId: string, variables?: Record<string, any>): Promise<ActionExecutionResult> {
+    return this.request<ActionExecutionResult>('/home/actions/script', {
+      method: 'POST',
+      body: JSON.stringify({ entity_id: entityId, variables })
+    });
+  }
+
+  /**
+   * Tranca ou destranca uma fechadura inteligente
+   */
+  public async actionLock(params: LockActionParams): Promise<ActionExecutionResult> {
+    return this.request<ActionExecutionResult>('/home/actions/lock', {
+      method: 'POST',
+      body: JSON.stringify(params)
+    });
+  }
+
+  /**
+   * Controla ventoinha ou ventilador
+   */
+  public async actionFan(params: FanActionParams): Promise<ActionExecutionResult> {
+    return this.request<ActionExecutionResult>('/home/actions/fan', {
+      method: 'POST',
+      body: JSON.stringify(params)
+    });
+  }
+
+  /**
+   * Controla aspirador robotizado
+   */
+  public async actionVacuum(params: VacuumActionParams): Promise<ActionExecutionResult> {
+    return this.request<ActionExecutionResult>('/home/actions/vacuum', {
+      method: 'POST',
+      body: JSON.stringify(params)
+    });
+  }
+
+  /**
+   * Dispara ou comuta uma automação
+   */
+  public async actionAutomation(params: AutomationActionParams): Promise<ActionExecutionResult> {
+    return this.request<ActionExecutionResult>('/home/actions/automation', {
+      method: 'POST',
+      body: JSON.stringify(params)
+    });
+  }
+
+  /**
+   * Obtém a lista de todas as câmaras de vigilância
+   */
+  public async getCamerasList(): Promise<CameraEntityInfo[]> {
+    return this.request<CameraEntityInfo[]>('/home/cameras');
+  }
+
+  /**
+   * Obtém agrupamento de entidades pelas divisões/áreas reais
+   */
+  public async getAreas(): Promise<Record<string, EntityState[]>> {
+    return this.request<Record<string, EntityState[]>>('/home/areas');
   }
 
   /**

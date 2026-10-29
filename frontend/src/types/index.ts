@@ -36,16 +36,30 @@ export interface EntityState {
   state: string;
   friendly_name: string;
   domain: string;
+  area_name?: string | null;
+  device_class?: string | null;
+  icon?: string | null;
+  unit_of_measurement?: string | null;
   attributes: Record<string, any>;
   last_updated?: string;
+}
+
+export interface CameraEntityInfo {
+  entity_id: string;
+  friendly_name: string;
+  state: string;
+  area_name?: string | null;
 }
 
 export interface HomeSummaryData {
   configured: boolean;
   status: 'operational' | 'disabled' | 'unreachable';
+  discovery_mode?: string;
   active_url_used?: string | null;
   temperature_celsius?: number | null;
   humidity_percent?: number | null;
+  power_consumption_watts?: number | null;
+  energy_consumption_kwh?: number | null;
   lights_on: number;
   total_lights: number;
   switches_on: number;
@@ -54,14 +68,30 @@ export interface HomeSummaryData {
   total_covers?: number;
   media_players_active?: number;
   total_media_players?: number;
+  binary_sensors_alert?: number;
+  total_binary_sensors?: number;
+  cameras_count?: number;
+  scenes_count?: number;
+  climates_count?: number;
+  domains_summary?: Record<string, number>;
+  areas?: string[];
   authorized_entities: EntityState[];
+}
+
+export interface LightActionParams {
+  entity_id: string;
+  action: 'on' | 'off' | 'toggle';
+  brightness?: number;
+  color_temp?: number;
+  rgb_color?: number[];
 }
 
 export interface ClimateActionParams {
   entity_id: string;
-  action: 'set_temperature' | 'set_hvac_mode';
+  action: 'set_temperature' | 'set_hvac_mode' | 'set_fan_mode';
   temperature?: number;
   hvac_mode?: string;
+  fan_mode?: string;
 }
 
 export interface CoverActionParams {
@@ -72,8 +102,30 @@ export interface CoverActionParams {
 
 export interface MediaPlayerActionParams {
   entity_id: string;
-  action: 'play' | 'pause' | 'play_pause' | 'volume_set' | 'mute';
+  action: 'play' | 'pause' | 'play_pause' | 'next' | 'previous' | 'volume_set' | 'mute';
   volume_level?: number;
+}
+
+export interface LockActionParams {
+  entity_id: string;
+  action: 'lock' | 'unlock';
+  code?: string;
+}
+
+export interface FanActionParams {
+  entity_id: string;
+  action: 'turn_on' | 'turn_off' | 'toggle' | 'set_percentage';
+  percentage?: number;
+}
+
+export interface VacuumActionParams {
+  entity_id: string;
+  action: 'start' | 'pause' | 'stop' | 'return_to_base';
+}
+
+export interface AutomationActionParams {
+  entity_id: string;
+  action: 'trigger' | 'turn_on' | 'turn_off';
 }
 
 export interface ActionExecutionResult {

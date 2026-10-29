@@ -48,12 +48,14 @@ class Settings(BaseSettings):
     HOME_ASSISTANT_TOKEN: Optional[str] = None
     HOME_ASSISTANT_TIMEOUT_SECONDS: int = 5
     HOME_ASSISTANT_VERIFY_SSL: bool = False
-    # Modo de descoberta: "labels" (etiqueta), "areas" (divisão/área), ou "allowlist" (manual)
-    HOME_ASSISTANT_DISCOVERY_MODE: str = "labels"
-    # Nome da etiqueta a procurar no Home Assistant (ex: "jarvis")
+    # Modo de descoberta: "all" (tudo do Home Assistant), "labels" (etiqueta), "areas" (divisão/área), ou "allowlist" (manual)
+    HOME_ASSISTANT_DISCOVERY_MODE: str = "all"
+    # Nome da etiqueta a procurar no Home Assistant (quando em modo labels)
     HOME_ASSISTANT_DISCOVERY_LABEL: str = "jarvis"
-    # Áreas/Divisões permitidas (separadas por vírgula, ex: "Escritório,Sala")
+    # Áreas/Divisões permitidas (quando em modo areas, separadas por vírgula)
     HOME_ASSISTANT_DISCOVERY_AREAS: str = ""
+    # Domínios autorizados do Home Assistant a incluir na interface
+    HOME_ASSISTANT_ALLOWED_DOMAINS: str = "light,switch,climate,cover,media_player,camera,scene,script,binary_sensor,sensor,lock,alarm_control_panel,fan,vacuum,automation"
     # Fallback ou lista manual de entidades autorizadas
     HOME_ASSISTANT_ALLOWED_ENTITIES: str = ""
     # Entidade no Home Assistant a atualizar quando o utilizador entra em VR/AR
@@ -86,6 +88,13 @@ class Settings(BaseSettings):
         if not self.JARVIS_CORS_ORIGINS or self.JARVIS_CORS_ORIGINS.strip() == "*":
             return ["*"]
         return [o.strip() for o in self.JARVIS_CORS_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def allowed_ha_domains(self) -> List[str]:
+        """Devolve a lista de domínios autorizados do Home Assistant."""
+        if not self.HOME_ASSISTANT_ALLOWED_DOMAINS:
+            return ["light", "switch", "climate", "cover", "media_player", "camera", "scene", "script", "binary_sensor", "sensor", "lock", "alarm_control_panel", "fan", "vacuum", "automation"]
+        return [d.strip().lower() for d in self.HOME_ASSISTANT_ALLOWED_DOMAINS.split(",") if d.strip()]
 
     @property
     def allowed_ha_entities(self) -> List[str]:

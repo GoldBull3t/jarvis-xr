@@ -64,23 +64,29 @@ class CommandExecuteResult(BaseModel):
 # --- SCHEMAS ESPECÍFICOS DO HOME ASSISTANT (FASE 4) ---
 
 class EntityState(BaseModel):
-    """Representação de estado normalizado de uma entidade autorizada."""
+    """Representação de estado normalizado de uma entidade autorizada do Home Assistant."""
     entity_id: str
     state: str
     friendly_name: str
     domain: str
+    area_name: Optional[str] = None
+    device_class: Optional[str] = None
+    icon: Optional[str] = None
+    unit_of_measurement: Optional[str] = None
     attributes: Dict[str, Any] = Field(default_factory=dict)
     last_updated: Optional[str] = None
 
 
 class HomeSummaryData(BaseModel):
-    """Resumo agregado do Home Assistant com suporte multi-domínio."""
+    """Resumo agregado do Home Assistant com suporte multi-domínio completo."""
     configured: bool
     status: str  # "operational", "disabled", "unreachable"
-    discovery_mode: str = "labels"
+    discovery_mode: str = "all"
     active_url_used: Optional[str] = None
     temperature_celsius: Optional[float] = None
     humidity_percent: Optional[float] = None
+    power_consumption_watts: Optional[float] = None
+    energy_consumption_kwh: Optional[float] = None
     lights_on: int = 0
     total_lights: int = 0
     switches_on: int = 0
@@ -89,25 +95,35 @@ class HomeSummaryData(BaseModel):
     total_covers: int = 0
     media_players_active: int = 0
     total_media_players: int = 0
+    binary_sensors_alert: int = 0
+    total_binary_sensors: int = 0
+    cameras_count: int = 0
+    scenes_count: int = 0
+    climates_count: int = 0
+    domains_summary: Dict[str, int] = Field(default_factory=dict)
+    areas: List[str] = Field(default_factory=list)
     authorized_entities: List[EntityState] = Field(default_factory=list)
 
 
 class ActionLightRequest(BaseModel):
-    entity_id: str = Field(description="ID da entidade authorized (ex: light.escritorio)")
+    entity_id: str = Field(description="ID da entidade (ex: light.escritorio)")
     action: str = Field(default="toggle", description="Ação permitida: 'on', 'off' ou 'toggle'")
     brightness: Optional[int] = Field(default=None, ge=0, le=255, description="Brilho entre 0 e 255")
+    color_temp: Optional[int] = Field(default=None, description="Mireds de temperatura de cor")
+    rgb_color: Optional[List[int]] = Field(default=None, description="Lista [R, G, B]")
 
 
 class ActionSwitchRequest(BaseModel):
-    entity_id: str = Field(description="ID do switch autorizado (ex: switch.tomada_servidor)")
+    entity_id: str = Field(description="ID do switch/tomada (ex: switch.tomada_servidor)")
     action: str = Field(default="toggle", description="Ação permitida: 'on', 'off' ou 'toggle'")
 
 
 class ActionClimateRequest(BaseModel):
     entity_id: str = Field(description="ID do termostato/AC (ex: climate.ac_escritorio)")
-    action: str = Field(default="set_temperature", description="Ação: 'set_temperature' ou 'set_hvac_mode'")
+    action: str = Field(default="set_temperature", description="Ação: 'set_temperature', 'set_hvac_mode' ou 'set_fan_mode'")
     temperature: Optional[float] = Field(default=None, description="Temperatura alvo em °C")
-    hvac_mode: Optional[str] = Field(default=None, description="Modo: 'heat', 'cool', 'fan_only', 'off'")
+    hvac_mode: Optional[str] = Field(default=None, description="Modo: 'heat', 'cool', 'fan_only', 'auto', 'off'")
+    fan_mode: Optional[str] = Field(default=None, description="Modo de ventilador")
 
 
 class ActionCoverRequest(BaseModel):
@@ -118,12 +134,53 @@ class ActionCoverRequest(BaseModel):
 
 class ActionMediaPlayerRequest(BaseModel):
     entity_id: str = Field(description="ID do media player (ex: media_player.sala_tv)")
-    action: str = Field(default="play_pause", description="Ação: 'play', 'pause', 'play_pause', 'volume_set', 'mute'")
+    action: str = Field(default="play_pause", description="Ação: 'play', 'pause', 'play_pause', 'next', 'previous', 'volume_set', 'mute'")
     volume_level: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Volume entre 0.0 e 1.0")
 
 
 class ActionSceneRequest(BaseModel):
     entity_id: str = Field(description="ID da cena autorizada (ex: scene.modo_cinema)")
+
+
+class ActionScriptRequest(BaseModel):
+    entity_id: str = Field(description="ID do script (ex: script.ligar_tv)")
+    variables: Optional[Dict[str, Any]] = Field(default=None, description="Variáveis opcionais para o script")
+
+
+class ActionLockRequest(BaseModel):
+    entity_id: str = Field(description="ID da fechadura (ex: lock.porta_principal)")
+    action: str = Field(default="lock", description="Ação: 'lock' ou 'unlock'")
+    code: Optional[str] = Field(default=None, description="Código PIN de segurança se exigido")
+
+
+class ActionFanRequest(BaseModel):
+    entity_id: str = Field(description="ID da ventoinha (ex: fan.quarto)")
+    action: str = Field(default="toggle", description="Ação: 'turn_on', 'turn_off', 'toggle', 'set_percentage'")
+    percentage: Optional[int] = Field(default=None, ge=0, le=100, description="Velocidade de 0 a 100%")
+
+
+class ActionVacuumRequest(BaseModel):
+    entity_id: str = Field(description="ID do aspirador (ex: vacuum.aspirador_sala)")
+    action: str = Field(default="start", description="Ação: 'start', 'pause', 'stop', 'return_to_base'")
+
+
+class ActionAutomationRequest(BaseModel):
+    entity_id: str = Field(description="ID da automação (ex: automation.luzes_noite)")
+    action: str = Field(default="trigger", description="Ação: 'trigger', 'turn_on', 'turn_off'")
+
+
+class ActionGenericEntityRequest(BaseModel):
+    entity_id: str
+    domain: str
+    service: str
+    service_data: Optional[Dict[str, Any]] = Field(default=None)
+
+
+class CameraEntityInfo(BaseModel):
+    entity_id: str
+    friendly_name: str
+    state: str
+    area_name: Optional[str] = None
 
 
 class ActionExecutionResult(BaseModel):

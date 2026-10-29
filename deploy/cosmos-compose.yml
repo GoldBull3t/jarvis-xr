@@ -47,8 +47,8 @@ services:
       - HOME_ASSISTANT_TIMEOUT_SECONDS=5
       - HOME_ASSISTANT_VERIFY_SSL=false
       
-      # Modo de descoberta: "labels" (etiqueta), "areas" (divisão/área), ou "allowlist" (manual)
-      - HOME_ASSISTANT_DISCOVERY_MODE=labels
+      # Modo de descoberta: "all" (descoberta total de tudo do Home Assistant), "labels" (etiqueta), "areas" (divisão/área), ou "allowlist" (manual)
+      - HOME_ASSISTANT_DISCOVERY_MODE=all
       - HOME_ASSISTANT_DISCOVERY_LABEL=jarvis
       # Áreas opcionais a incluir (separadas por vírgula):
       - HOME_ASSISTANT_DISCOVERY_AREAS=

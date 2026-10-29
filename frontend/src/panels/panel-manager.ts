@@ -205,26 +205,50 @@ export class SpatialPanelManager3D {
         ctx.textAlign = 'left';
       }
 
-      // Botões específicos de câmara
+      // Botões específicos de câmara com suporte multi-câmara
+      const prevCamBtn: PanelButtonArea = {
+        id: 'btn-cam-prev',
+        x: 18,
+        y: 280,
+        width: 95,
+        height: 42,
+        label: '◀ ANT',
+        action: 'prev_camera'
+      };
+      panel.buttons.push(prevCamBtn);
+      this.drawButton(ctx, prevCamBtn, highlightButtonId === prevCamBtn.id);
+
       const refreshCamBtn: PanelButtonArea = {
         id: 'btn-cam-refresh',
-        x: 20,
+        x: 120,
         y: 280,
-        width: 220,
+        width: 165,
         height: 42,
-        label: '⟳ ATUALIZAR SNAPSHOT',
+        label: '⟳ ATUALIZAR',
         action: 'refresh_camera'
       };
       panel.buttons.push(refreshCamBtn);
       this.drawButton(ctx, refreshCamBtn, highlightButtonId === refreshCamBtn.id);
 
+      const nextCamBtn: PanelButtonArea = {
+        id: 'btn-cam-next',
+        x: 292,
+        y: 280,
+        width: 95,
+        height: 42,
+        label: 'SEG ▶',
+        action: 'next_camera'
+      };
+      panel.buttons.push(nextCamBtn);
+      this.drawButton(ctx, nextCamBtn, highlightButtonId === nextCamBtn.id);
+
       const openCamBtn: PanelButtonArea = {
         id: 'btn-cam-open',
-        x: 260,
+        x: 394,
         y: 280,
-        width: 230,
+        width: 100,
         height: 42,
-        label: '📷 ABRIR NO NAVEGADOR',
+        label: 'WEB ↗',
         action: 'open_camera_url'
       };
       panel.buttons.push(openCamBtn);
