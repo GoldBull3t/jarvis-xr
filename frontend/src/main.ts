@@ -184,6 +184,17 @@ class JarvisApp {
       this.uiOverlay.setVoiceFeedback('Autenticação necessária (HTTP 401). Abra a configuração de Chave no topo.');
       this.uiOverlay.openApiKeyModal();
     }) as EventListener);
+
+    // Recuperação automática de suspensão do headset Meta Quest 3S
+    document.addEventListener('visibilitychange', (async () => {
+      if (document.visibilityState === 'visible') {
+        console.log('Sessão reativada (Headset acordou). A sincronizar telemetria...');
+        await this.loadInitialData();
+        if (this.isArActive) {
+          await api.sendPresence(true);
+        }
+      }
+    }) as EventListener);
   }
 
   private onWindowResize() {
@@ -333,6 +344,16 @@ class JarvisApp {
       let res;
       if (domain === 'switch' || entityId.startsWith('switch.')) {
         res = await api.actionSwitch(entityId, 'toggle');
+      } else if (domain === 'cover' || entityId.startsWith('cover.')) {
+        res = await api.actionCover({ entity_id: entityId, action: 'toggle' });
+      } else if (domain === 'media_player' || entityId.startsWith('media_player.')) {
+        res = await api.actionMediaPlayer({ entity_id: entityId, action: 'play_pause' });
+      } else if (domain === 'climate' || entityId.startsWith('climate.')) {
+        res = await api.actionClimate({ entity_id: entityId, action: 'set_hvac_mode', hvac_mode: 'heat' });
+      } else if (domain === 'camera' || entityId.startsWith('camera.')) {
+        window.open(api.getCameraSnapshotUrl(entityId), '_blank');
+        this.speakFeedback('A carregar imagem instantânea da câmara.');
+        return;
       } else {
         res = await api.actionLight(entityId, 'toggle');
       }

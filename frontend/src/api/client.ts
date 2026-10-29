@@ -11,6 +11,9 @@ import type {
   HomeSummaryData,
   EntityState,
   ActionExecutionResult,
+  ClimateActionParams,
+  CoverActionParams,
+  MediaPlayerActionParams,
   ProxmoxSummaryData,
   DnsSummaryData,
   ServiceHealthItem
@@ -163,6 +166,43 @@ export class JarvisApiClient {
       method: 'POST',
       body: JSON.stringify({ entity_id: entityId, action })
     });
+  }
+
+  /**
+   * Controla termostato ou ar condicionado autorizado (Fase Avançada)
+   */
+  public async actionClimate(params: ClimateActionParams): Promise<ActionExecutionResult> {
+    return this.request<ActionExecutionResult>('/home/actions/climate', {
+      method: 'POST',
+      body: JSON.stringify(params)
+    });
+  }
+
+  /**
+   * Controla estores ou cortinas elétricas autorizadas
+   */
+  public async actionCover(params: CoverActionParams): Promise<ActionExecutionResult> {
+    return this.request<ActionExecutionResult>('/home/actions/cover', {
+      method: 'POST',
+      body: JSON.stringify(params)
+    });
+  }
+
+  /**
+   * Controla reprodutor multimédia autorizado
+   */
+  public async actionMediaPlayer(params: MediaPlayerActionParams): Promise<ActionExecutionResult> {
+    return this.request<ActionExecutionResult>('/home/actions/media_player', {
+      method: 'POST',
+      body: JSON.stringify(params)
+    });
+  }
+
+  /**
+   * Devolve o URL da API para carregar snapshot JPEG de uma câmara de segurança
+   */
+  public getCameraSnapshotUrl(entityId: string): string {
+    return `${this.baseUrl}/home/camera/${entityId}/snapshot`;
   }
 
   /**

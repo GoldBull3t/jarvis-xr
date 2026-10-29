@@ -43,13 +43,17 @@ class Settings(BaseSettings):
     # Integração Home Assistant
     HOME_ASSISTANT_ENABLED: bool = False
     HOME_ASSISTANT_URL: Optional[str] = None
+    # URL de contingência opcional (ex: IP local direto caso o domínio DNS falhe)
+    HOME_ASSISTANT_FALLBACK_URL: Optional[str] = None
     HOME_ASSISTANT_TOKEN: Optional[str] = None
     HOME_ASSISTANT_TIMEOUT_SECONDS: int = 5
     HOME_ASSISTANT_VERIFY_SSL: bool = False
-    # Modo de descoberta: "labels" (automático por etiqueta do HA) ou "manual" (por lista de IDs)
+    # Modo de descoberta: "labels" (etiqueta), "areas" (divisão/área), ou "allowlist" (manual)
     HOME_ASSISTANT_DISCOVERY_MODE: str = "labels"
-    # Nome da etiqueta a procurar no Home Assistant (ex: "jarvis" ou "jarvis-xr")
+    # Nome da etiqueta a procurar no Home Assistant (ex: "jarvis")
     HOME_ASSISTANT_DISCOVERY_LABEL: str = "jarvis"
+    # Áreas/Divisões permitidas (separadas por vírgula, ex: "Escritório,Sala")
+    HOME_ASSISTANT_DISCOVERY_AREAS: str = ""
     # Fallback ou lista manual de entidades autorizadas
     HOME_ASSISTANT_ALLOWED_ENTITIES: str = ""
     # Entidade no Home Assistant a atualizar quando o utilizador entra em VR/AR
@@ -89,6 +93,13 @@ class Settings(BaseSettings):
         if not self.HOME_ASSISTANT_ALLOWED_ENTITIES:
             return []
         return [e.strip() for e in self.HOME_ASSISTANT_ALLOWED_ENTITIES.split(",") if e.strip()]
+
+    @property
+    def allowed_ha_areas(self) -> List[str]:
+        """Devolve a lista de áreas autorizadas para descoberta."""
+        if not self.HOME_ASSISTANT_DISCOVERY_AREAS:
+            return []
+        return [a.strip().lower() for a in self.HOME_ASSISTANT_DISCOVERY_AREAS.split(",") if a.strip()]
 
     @property
     def allowed_proxmox_vmids(self) -> List[int]:

@@ -32,12 +32,16 @@ services:
 
       # Integração Home Assistant
       - HOME_ASSISTANT_ENABLED=true
-      - HOME_ASSISTANT_URL=http://192.168.1.110:8123
+      - HOME_ASSISTANT_URL=https://ha.bernaslab.top
+      # URL de contingência opcional (comuta automaticamente se o domínio primário falhar):
+      - HOME_ASSISTANT_FALLBACK_URL=http://192.168.30.237:8123
       - HOME_ASSISTANT_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
       - HOME_ASSISTANT_TIMEOUT_SECONDS=5
       - HOME_ASSISTANT_VERIFY_SSL=false
       - HOME_ASSISTANT_DISCOVERY_MODE=labels
       - HOME_ASSISTANT_DISCOVERY_LABEL=jarvis
+      # Descoberta por divisão/área opcional:
+      - HOME_ASSISTANT_DISCOVERY_AREAS=
       - HOME_ASSISTANT_PRESENCE_ENTITY=input_boolean.jarvis_xr_active
       - HOME_ASSISTANT_ALLOWED_ENTITIES=light.escritorio,switch.tomada_servidor
 
@@ -50,7 +54,13 @@ services:
       - ADGUARD_PASSWORD=
 
       # Allowlist de Serviços do Homelab
-      - HOMELAB_SERVICES=[{"name":"Proxmox VE","url":"https://192.168.1.100:8006"},{"name":"Home Assistant","url":"http://192.168.1.110:8123"}]
+      - HOMELAB_SERVICES=[{"name":"Proxmox VE","url":"https://192.168.30.123:8006"},{"name":"Home Assistant","url":"https://ha.bernaslab.top"}]
+    # Resolução DNS e mapeamento de hosts para domínios locais do Homelab
+    dns:
+      - 192.168.10.1
+      - 1.1.1.1
+    extra_hosts:
+      - "ha.bernaslab.top:192.168.30.237"
     networks:
       - cosmos-network
 

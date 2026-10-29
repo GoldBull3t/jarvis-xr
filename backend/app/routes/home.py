@@ -1,5 +1,5 @@
 """Rotas da API dedicadas ao Home Assistant."""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from app.security import verify_api_key
 from app.schemas import (
     APIResponse,
@@ -7,6 +7,9 @@ from app.schemas import (
     ActionLightRequest,
     ActionSwitchRequest,
     ActionSceneRequest,
+    ActionClimateRequest,
+    ActionCoverRequest,
+    ActionMediaPlayerRequest,
     ActionExecutionResult,
     PresenceUpdateRequest
 )
@@ -94,6 +97,88 @@ async def action_scene(
         return APIResponse(status="error", error=result.message, data=result)
 
     return APIResponse(status="ok", data=result)
+
+
+@router.post("/actions/climate", response_model=APIResponse)
+async def action_climate(
+    req: ActionClimateRequest,
+    _: str = Depends(verify_api_key)
+):
+    """Aciona controlo de climatização (termostato/AC) autorizado."""
+    if not ha_adapter._is_entity_authorized(req.entity_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"A entidade '{req.entity_id}' não está autorizada."
+        )
+
+    result: ActionExecutionResult = await ha_adapter.control_climate(
+        entity_id=req.entity_id,
+        action=req.action,
+        temperature=req.temperature,
+        hvac_mode=req.hvac_mode
+    )
+    if not result.success:
+        return APIResponse(status="error", error=result.message, data=result)
+    return APIResponse(status="ok", data=result)
+
+
+@router.post("/actions/cover", response_model=APIResponse)
+async def action_cover(
+    req: ActionCoverRequest,
+    _: str = Depends(verify_api_key)
+):
+    """Aciona estores ou cortinas autorizadas."""
+    if not ha_adapter._is_entity_authorized(req.entity_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"O estore '{req.entity_id}' não está autorizado."
+        )
+
+    result: ActionExecutionResult = await ha_adapter.control_cover(
+        entity_id=req.entity_id,
+        action=req.action,
+        position=req.position
+    )
+    if not result.success:
+        return APIResponse(status="error", error=result.message, data=result)
+    return APIResponse(status="ok", data=result)
+
+
+@router.post("/actions/media_player", response_model=APIResponse)
+async def action_media_player(
+    req: ActionMediaPlayerRequest,
+    _: str = Depends(verify_api_key)
+):
+    """Controla reprodução multimédia autorizada."""
+    if not ha_adapter._is_entity_authorized(req.entity_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"O media player '{req.entity_id}' não está autorizado."
+        )
+
+    result: ActionExecutionResult = await ha_adapter.control_media_player(
+        entity_id=req.entity_id,
+        action=req.action,
+        volume_level=req.volume_level
+    )
+    if not result.success:
+        return APIResponse(status="error", error=result.message, data=result)
+    return APIResponse(status="ok", data=result)
+
+
+@router.get("/camera/{entity_id}/snapshot")
+async def get_camera_snapshot(
+    entity_id: str,
+    _: str = Depends(verify_api_key)
+):
+    """Obtém imagem instantânea (JPEG) de uma câmara de segurança autorizada."""
+    if not ha_adapter._is_entity_authorized(entity_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Câmara não autorizada")
+    
+    img_bytes = await ha_adapter.get_camera_snapshot(entity_id)
+    if not img_bytes:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Snapshot indisponível")
+    return Response(content=img_bytes, media_type="image/jpeg")
 
 
 @router.post("/presence", response_model=APIResponse)

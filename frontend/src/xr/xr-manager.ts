@@ -111,6 +111,27 @@ export class XRManager {
   }
 
   private setupSelectEvents() {
+    // Gestão dinâmica de ligação/desligamento de comandos e mãos (Hot-Swapping)
+    this.controller1.addEventListener('connected', (event: any) => {
+      this.rayLine1.visible = true;
+      if (event.data?.targetRayMode === 'screen') {
+        this.rayLine1.visible = false;
+      }
+    });
+    this.controller1.addEventListener('disconnected', () => {
+      this.rayLine1.visible = false;
+    });
+
+    this.controller2.addEventListener('connected', (event: any) => {
+      this.rayLine2.visible = true;
+      if (event.data?.targetRayMode === 'screen') {
+        this.rayLine2.visible = false;
+      }
+    });
+    this.controller2.addEventListener('disconnected', () => {
+      this.rayLine2.visible = false;
+    });
+
     // Disparo por gatilho ou pinch do controlador 0
     this.controller1.addEventListener('selectstart', () => this.handleSelect(0));
     this.controller1.addEventListener('select', () => this.triggerHaptic(0));

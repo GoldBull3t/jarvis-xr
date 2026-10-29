@@ -188,6 +188,11 @@ export class UiOverlayManager {
     const hum = isReal ? (this.homeData!.humidity_percent ?? 'N/D') : this.demoData!.home.humidity_percent;
     const lightsOn = isReal ? this.homeData!.lights_on : this.demoData!.home.lights_on;
     const totalLights = isReal ? this.homeData!.total_lights : this.demoData!.home.total_lights;
+    const coversOpen = isReal ? (this.homeData!.covers_open ?? 0) : 0;
+    const totalCovers = isReal ? (this.homeData!.total_covers ?? 0) : 0;
+    const mediaActive = isReal ? (this.homeData!.media_players_active ?? 0) : 0;
+    const totalMedia = isReal ? (this.homeData!.total_media_players ?? 0) : 0;
+    const activeUrl = isReal && this.homeData!.active_url_used ? this.homeData!.active_url_used : '';
 
     const entities = isReal
       ? this.homeData!.authorized_entities.map(e => ({
@@ -206,6 +211,10 @@ export class UiOverlayManager {
             ${isReal ? 'INTEGRAÇÃO REAL' : 'DEMO'}
           </span>
         </div>
+        ${activeUrl ? `
+        <div style="font-size: 0.7rem; color: var(--color-text-dim); margin-bottom: 8px;">
+          Ligado via: <span style="color: var(--color-primary-cyan);">${activeUrl}</span>
+        </div>` : ''}
         <div class="data-row">
           <span class="data-label">Temperatura Ambiente:</span>
           <span class="data-value">${temp} °C</span>
@@ -218,24 +227,46 @@ export class UiOverlayManager {
           <span class="data-label">Luzes Ligadas:</span>
           <span class="data-value">${lightsOn} de ${totalLights}</span>
         </div>
+        ${totalCovers > 0 ? `
+        <div class="data-row">
+          <span class="data-label">Estores Abertos:</span>
+          <span class="data-value">${coversOpen} de ${totalCovers}</span>
+        </div>` : ''}
+        ${totalMedia > 0 ? `
+        <div class="data-row">
+          <span class="data-label">Multimédia Ativo:</span>
+          <span class="data-value">${mediaActive} de ${totalMedia}</span>
+        </div>` : ''}
         
         <div style="margin-top: 14px; font-weight: bold; color: var(--color-primary-cyan); font-size: 0.8rem;">
-          ENTIDADES AUTORIZADAS:
+          DISPOSITIVOS AUTORIZADOS:
         </div>
 
-        ${entities.length === 0 ? '<p class="data-label" style="margin-top: 6px;">Nenhuma entidade na allowlist autorizada.</p>' : ''}
+        ${entities.length === 0 ? '<p class="data-label" style="margin-top: 6px;">Nenhuma entidade encontrada.</p>' : ''}
 
-        ${entities.map(e => `
+        ${entities.map(e => {
+          let btnLabel = e.state.toUpperCase();
+          if (e.type === 'cover') {
+            btnLabel = e.state === 'open' ? 'FECHAR' : 'ABRIR';
+          } else if (e.type === 'media_player') {
+            btnLabel = (e.state === 'playing' || e.state === 'on') ? 'PAUSAR' : 'REPRODUZIR';
+          } else if (e.type === 'camera') {
+            btnLabel = '📷 SNAPSHOT';
+          } else if (e.type === 'climate') {
+            btnLabel = 'HVAC';
+          }
+          return `
           <div class="data-row">
             <div>
               <div style="font-weight: 600; color: #fff;">${e.name}</div>
-              <div style="font-size: 0.7rem; color: var(--color-text-dim);">${e.id}</div>
+              <div style="font-size: 0.7rem; color: var(--color-text-dim);">${e.id} [${e.type.toUpperCase()}]</div>
             </div>
             <button class="entity-btn action-entity-btn" data-entity-id="${e.id}" data-entity-domain="${e.type}" data-current-state="${e.state}">
-              ${e.state.toUpperCase()}
+              ${btnLabel}
             </button>
           </div>
-        `).join('')}
+          `;
+        }).join('')}
       </div>
     `;
 

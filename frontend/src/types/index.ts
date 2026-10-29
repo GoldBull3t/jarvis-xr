@@ -43,13 +43,37 @@ export interface EntityState {
 export interface HomeSummaryData {
   configured: boolean;
   status: 'operational' | 'disabled' | 'unreachable';
+  active_url_used?: string | null;
   temperature_celsius?: number | null;
   humidity_percent?: number | null;
   lights_on: number;
   total_lights: number;
   switches_on: number;
   total_switches: number;
+  covers_open?: number;
+  total_covers?: number;
+  media_players_active?: number;
+  total_media_players?: number;
   authorized_entities: EntityState[];
+}
+
+export interface ClimateActionParams {
+  entity_id: string;
+  action: 'set_temperature' | 'set_hvac_mode';
+  temperature?: number;
+  hvac_mode?: string;
+}
+
+export interface CoverActionParams {
+  entity_id: string;
+  action: 'open' | 'close' | 'stop' | 'toggle' | 'set_position';
+  position?: number;
+}
+
+export interface MediaPlayerActionParams {
+  entity_id: string;
+  action: 'play' | 'pause' | 'play_pause' | 'volume_set' | 'mute';
+  volume_level?: number;
 }
 
 export interface ActionExecutionResult {

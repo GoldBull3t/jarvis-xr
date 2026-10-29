@@ -74,16 +74,21 @@ class EntityState(BaseModel):
 
 
 class HomeSummaryData(BaseModel):
-    """Resumo agregado do Home Assistant."""
+    """Resumo agregado do Home Assistant com suporte multi-domínio."""
     configured: bool
     status: str  # "operational", "disabled", "unreachable"
     discovery_mode: str = "labels"
+    active_url_used: Optional[str] = None
     temperature_celsius: Optional[float] = None
     humidity_percent: Optional[float] = None
     lights_on: int = 0
     total_lights: int = 0
     switches_on: int = 0
     total_switches: int = 0
+    covers_open: int = 0
+    total_covers: int = 0
+    media_players_active: int = 0
+    total_media_players: int = 0
     authorized_entities: List[EntityState] = Field(default_factory=list)
 
 
@@ -96,6 +101,25 @@ class ActionLightRequest(BaseModel):
 class ActionSwitchRequest(BaseModel):
     entity_id: str = Field(description="ID do switch autorizado (ex: switch.tomada_servidor)")
     action: str = Field(default="toggle", description="Ação permitida: 'on', 'off' ou 'toggle'")
+
+
+class ActionClimateRequest(BaseModel):
+    entity_id: str = Field(description="ID do termostato/AC (ex: climate.ac_escritorio)")
+    action: str = Field(default="set_temperature", description="Ação: 'set_temperature' ou 'set_hvac_mode'")
+    temperature: Optional[float] = Field(default=None, description="Temperatura alvo em °C")
+    hvac_mode: Optional[str] = Field(default=None, description="Modo: 'heat', 'cool', 'fan_only', 'off'")
+
+
+class ActionCoverRequest(BaseModel):
+    entity_id: str = Field(description="ID do estore/cortina (ex: cover.estore_sala)")
+    action: str = Field(default="toggle", description="Ação: 'open', 'close', 'stop', 'toggle', 'set_position'")
+    position: Optional[int] = Field(default=None, ge=0, le=100, description="Posição de 0 a 100%")
+
+
+class ActionMediaPlayerRequest(BaseModel):
+    entity_id: str = Field(description="ID do media player (ex: media_player.sala_tv)")
+    action: str = Field(default="play_pause", description="Ação: 'play', 'pause', 'play_pause', 'volume_set', 'mute'")
+    volume_level: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Volume entre 0.0 e 1.0")
 
 
 class ActionSceneRequest(BaseModel):

@@ -33,9 +33,17 @@ class ProxmoxAdapter(BaseAdapter):
         return bool(settings.PROXMOX_ENABLED and self.url and self.token_id and self.token_secret)
 
     def _get_headers(self) -> Dict[str, str]:
-        """Gera o cabeçalho oficial de autenticação PVEAPIToken."""
+        """Gera o cabeçalho oficial de autenticação PVEAPIToken com normalização inteligente de realm."""
+        token_id = self.token_id.strip()
+        # Normaliza caso haja duplicidade de realms (ex: user@pve@pam!token)
+        if "@" in token_id and "!" in token_id:
+            user_part, token_name = token_id.split("!", 1)
+            parts = user_part.split("@")
+            if len(parts) > 2:
+                token_id = f"{parts[0]}@{parts[-1]}!{token_name}"
+
         return {
-            "Authorization": f"PVEAPIToken={self.token_id}={self.token_secret}",
+            "Authorization": f"PVEAPIToken={token_id}={self.token_secret.strip()}",
             "Accept": "application/json"
         }
 
@@ -119,30 +127,49 @@ class ProxmoxAdapter(BaseAdapter):
         return vms
 
     async def get_storage(self) -> List[ProxmoxStorageItem]:
-        """Obtém o estado e capacidade de todos os pools de armazenamento (ZFS, LVM, NFS)."""
+        """Obtém o estado e capacidade de todos os pools de armazenamento (ZFS, LVM, Ceph, NFS, PBS)."""
         if not self.is_configured():
             return []
 
         items: List[ProxmoxStorageItem] = []
         try:
             async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
-                res = await client.get(f"{self.url}/api2/json/storage", headers=self._get_headers())
+                # 1. Consulta prioritária em cluster/resources para obter métricas ativas de disco
+                res = await client.get(f"{self.url}/api2/json/cluster/resources?type=storage", headers=self._get_headers())
                 if res.status_code == 200:
-                    raw_storage = res.json().get("data", [])
-                    for s in raw_storage:
-                        total = float(s.get("total", 0))
-                        used = float(s.get("used", 0))
+                    raw_data = res.json().get("data", [])
+                    for s in raw_data:
+                        total = float(s.get("maxdisk", 0))
+                        used = float(s.get("disk", 0))
                         used_gb = round(used / (1024 ** 3), 1)
                         total_gb = round(total / (1024 ** 3), 1)
                         pct = round((used / total * 100), 1) if total > 0 else 0.0
 
                         items.append(ProxmoxStorageItem(
                             storage=s.get("storage", "unknown"),
-                            type=s.get("type", "dir"),
+                            type=s.get("plugintype", s.get("type", "storage")),
                             used_gb=used_gb,
                             total_gb=total_gb,
                             percent=pct
                         ))
+
+                # 2. Se cluster/resources não devolveu dados detalhados, tenta /storage
+                if not items:
+                    res_std = await client.get(f"{self.url}/api2/json/storage", headers=self._get_headers())
+                    if res_std.status_code == 200:
+                        for s in res_std.json().get("data", []):
+                            total = float(s.get("total", 0))
+                            used = float(s.get("used", 0))
+                            used_gb = round(used / (1024 ** 3), 1)
+                            total_gb = round(total / (1024 ** 3), 1)
+                            pct = round((used / total * 100), 1) if total > 0 else 0.0
+                            items.append(ProxmoxStorageItem(
+                                storage=s.get("storage", "unknown"),
+                                type=s.get("type", "dir"),
+                                used_gb=used_gb,
+                                total_gb=total_gb,
+                                percent=pct
+                            ))
         except Exception as e:
             logger.error(f"Erro ao consultar pools de armazenamento do Proxmox: {str(e)}")
 
