@@ -86,3 +86,4 @@ async def stream_events(request: Request, _: str = Depends(verify_api_key)):
             "X-Accel-Buffering": "no"
         }
     )
+

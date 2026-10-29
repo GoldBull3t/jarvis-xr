@@ -465,16 +465,51 @@ export class UiOverlayManager {
   }
 
   private renderServices() {
-    const isReal = this.servicesData && this.servicesData.length > 0;
+    const isReal = Boolean(this.servicesData && this.servicesData.length > 0);
+    const isConnected = Boolean(this.connStatus && this.connStatus.textContent && !this.connStatus.textContent.includes('DESLIGADO'));
+
+    // Se o backend está online mas não tem serviços adicionais na allowlist, não apresenta dados falsos de demonstração
+    if (!isReal && isConnected) {
+      this.mainPanel.innerHTML = `
+        <div class="panel-card">
+          <div class="panel-title">
+            <span>DISPONIBILIDADE // SERVIÇOS HOMELAB</span>
+            <span class="badge-demo" style="color: var(--color-success); border-color: var(--color-success); background: rgba(0, 255, 157, 0.1);">
+              SISTEMA CONECTADO
+            </span>
+          </div>
+          <p class="data-label" style="margin-bottom: 12px; font-size: 0.75rem;">
+            Nenhum serviço HTTP adicional na allowlist manual HOMELAB_SERVICES.
+          </p>
+          <div style="font-size: 0.8rem; color: var(--color-text-dim); line-height: 1.5; padding: 12px; background: rgba(0, 229, 255, 0.05); border: 1px dashed rgba(0, 229, 255, 0.2); border-radius: 4px;">
+            💡 <strong>Integrações Operacionais:</strong> O Proxmox VE e o Home Assistant estão a ser monitorizados em tempo real. Aceda ao separador <strong>DIAGNÓSTICO</strong> para consultar a latência em tempo real.
+          </div>
+        </div>
+      `;
+      return;
+    }
+
     const list = isReal
       ? this.servicesData!
-      : this.demoData!.services.map(s => ({
+      : (this.demoData?.services || []).map(s => ({
           name: s.name,
           url: s.url,
           status: s.status,
           latency_ms: s.latency_ms,
           last_checked: new Date().toISOString()
         }));
+
+    if (list.length === 0) {
+      this.mainPanel.innerHTML = `
+        <div class="panel-card">
+          <div class="panel-title">
+            <span>DISPONIBILIDADE // SERVIÇOS HOMELAB</span>
+          </div>
+          <p class="data-label">Nenhum serviço em monitorização.</p>
+        </div>
+      `;
+      return;
+    }
 
     this.mainPanel.innerHTML = `
       <div class="panel-card">

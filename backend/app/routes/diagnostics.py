@@ -140,3 +140,4 @@ async def get_full_diagnostics(_: str = Depends(verify_api_key)):
             system_info=system_info
         )
     )
+

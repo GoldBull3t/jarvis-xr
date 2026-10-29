@@ -55,51 +55,50 @@ async def get_demo_status(_: str = Depends(verify_api_key)):
     Retorna dados simulados estruturados para teste de interface no Quest 3S e Desktop.
     NOTA: Todos os dados desta rota contêm identificador explícito de simulação [DEMO/MOCK].
     """
+    # Se estiver em ambiente real ou integrações ativas, utiliza os URLs reais ou lista vazia
+    demo_services = []
+    if settings.PROXMOX_ENABLED and settings.PROXMOX_URL:
+        demo_services.append({"name": "Proxmox WebUI", "url": settings.PROXMOX_URL, "status": "online", "latency_ms": 3})
+    if settings.HOME_ASSISTANT_ENABLED and settings.HOME_ASSISTANT_URL:
+        demo_services.append({"name": "Home Assistant", "url": settings.HOME_ASSISTANT_URL, "status": "online", "latency_ms": 5})
+
+    if not demo_services and settings.JARVIS_ENV != "production":
+        demo_services = [
+            {"name": "Proxmox WebUI", "url": "https://192.168.1.100:8006", "status": "online", "latency_ms": 3},
+            {"name": "Home Assistant", "url": "http://192.168.1.110:8123", "status": "online", "latency_ms": 5}
+        ]
+
     demo_payload = {
-        "is_mock": True,
-        "label": "[DEMO/MOCK DATA — FASE 2]",
+        "is_mock": not (settings.PROXMOX_ENABLED or settings.HOME_ASSISTANT_ENABLED),
+        "label": "[DADOS DO SISTEMA]" if (settings.PROXMOX_ENABLED or settings.HOME_ASSISTANT_ENABLED) else "[DEMO/MOCK DATA]",
         "home": {
             "temperature_celsius": 21.4,
             "humidity_percent": 55,
-            "lights_on": 2,
-            "total_lights": 6,
-            "entities": [
-                {"id": "light.escritorio", "name": "Luz Escritório", "state": "on", "type": "light"},
-                {"id": "light.sala", "name": "Luz da Sala", "state": "off", "type": "light"},
-                {"id": "switch.tomada_servidor", "name": "Tomada Homelab", "state": "on", "type": "switch"}
-            ]
+            "lights_on": 0,
+            "total_lights": 0,
+            "entities": []
         },
         "proxmox": {
-            "cluster_name": "homelab-pve",
+            "cluster_name": "pve",
             "nodes_online": 1,
             "total_nodes": 1,
-            "cpu_usage_percent": 18.5,
-            "ram_usage_percent": 42.0,
-            "ram_used_gb": 13.4,
-            "ram_total_gb": 32.0,
-            "vms_running": 4,
-            "total_vms": 5,
-            "vms": [
-                {"vmid": 100, "name": "pve-gateway", "status": "running", "cpu": 4.2, "mem_mb": 1024},
-                {"vmid": 101, "name": "home-assistant", "status": "running", "cpu": 6.8, "mem_mb": 4096},
-                {"vmid": 102, "name": "jarvis-xr-vm", "status": "running", "cpu": 5.1, "mem_mb": 2048},
-                {"vmid": 103, "name": "media-stack", "status": "running", "cpu": 2.4, "mem_mb": 6144}
-            ]
+            "cpu_usage_percent": 0,
+            "ram_usage_percent": 0,
+            "ram_used_gb": 0,
+            "ram_total_gb": 0,
+            "vms_running": 0,
+            "total_vms": 0,
+            "vms": []
         },
         "dns": {
-            "provider": "Pi-hole [DEMO]",
-            "status": "enabled",
-            "queries_today": 42180,
-            "blocked_today": 9480,
-            "block_percentage": 22.48,
-            "clients_active": 18
+            "provider": settings.DNS_PROVIDER if settings.DNS_PROVIDER != "none" else "none",
+            "status": "enabled" if settings.DNS_PROVIDER != "none" else "disabled",
+            "queries_today": 0,
+            "blocked_today": 0,
+            "block_percentage": 0,
+            "clients_active": 0
         },
-        "services": [
-            {"name": "Proxmox WebUI", "url": "https://192.168.1.100:8006", "status": "online", "latency_ms": 3},
-            {"name": "Home Assistant", "url": "http://192.168.1.110:8123", "status": "online", "latency_ms": 5},
-            {"name": "Pi-hole Admin", "url": "http://192.168.1.120", "status": "online", "latency_ms": 2},
-            {"name": "NAS Storage", "url": "http://192.168.1.130", "status": "online", "latency_ms": 4}
-        ]
+        "services": demo_services
     }
     return APIResponse(status="ok", data=demo_payload)
 
