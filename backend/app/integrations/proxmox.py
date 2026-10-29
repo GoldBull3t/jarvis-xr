@@ -314,4 +314,5 @@ class ProxmoxAdapter(BaseAdapter):
 
 
 proxmox_adapter = ProxmoxAdapter()
+pve_adapter = proxmox_adapter
 
