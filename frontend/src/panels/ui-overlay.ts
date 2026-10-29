@@ -246,6 +246,30 @@ export class UiOverlayManager {
           <div class="progress-bar-fill" style="width: ${Math.min(ramPercent, 100)}%"></div>
         </div>
 
+        ${isReal && this.pveData!.storage_pools && this.pveData!.storage_pools.length > 0 ? `
+          <div style="margin-top: 14px; font-weight: bold; color: var(--color-primary-cyan); font-size: 0.8rem;">
+            POOLS DE ARMAZENAMENTO (STORAGE):
+          </div>
+          ${this.pveData!.storage_pools.map(s => `
+            <div class="data-row" style="padding: 4px 0;">
+              <span class="data-label">${s.storage} (${s.type}):</span>
+              <span class="data-value">${s.used_gb} GB / ${s.total_gb} GB (${s.percent}%)</span>
+            </div>
+            <div class="progress-bar-container" style="height: 4px; margin-bottom: 6px;">
+              <div class="progress-bar-fill" style="width: ${Math.min(s.percent, 100)}%"></div>
+            </div>
+          `).join('')}
+        ` : ''}
+
+        ${isReal && this.pveData!.backup_status ? `
+          <div class="data-row" style="margin-top: 8px;">
+            <span class="data-label">Estado de Backup:</span>
+            <span class="data-value" style="color: ${this.pveData!.backup_status.status === 'ok' ? '#00ff9d' : '#ffb700'}">
+              ${this.pveData!.backup_status.message}
+            </span>
+          </div>
+        ` : ''}
+
         <div style="margin-top: 14px; font-weight: bold; color: var(--color-primary-cyan); font-size: 0.8rem;">
           MÁQUINAS VIRTUAIS & CONTAINERS:
         </div>
@@ -253,15 +277,48 @@ export class UiOverlayManager {
         ${vms.length === 0 ? '<p class="data-label" style="margin-top: 6px;">Nenhuma VM/LXC encontrada no Proxmox.</p>' : ''}
 
         ${vms.map(vm => `
-          <div class="data-row">
-            <span class="data-label">[${vm.vmid}] ${vm.name} <small style="color:#7da5c2">(${vm.type.toUpperCase()})</small></span>
-            <span class="data-value" style="color: ${vm.status === 'running' ? '#00ff9d' : '#ff3366'}">
-              ${vm.status.toUpperCase()} (${vm.cpu}% CPU)
-            </span>
+          <div class="data-row" style="flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 0;">
+            <div style="display: flex; justify-content: space-between; width: 100%;">
+              <span class="data-label">[${vm.vmid}] ${vm.name} <small style="color:#7da5c2">(${vm.type.toUpperCase()})</small></span>
+              <span class="data-value" style="color: ${vm.status === 'running' ? '#00ff9d' : '#ff3366'}">
+                ${vm.status.toUpperCase()} (${vm.cpu}% CPU)
+              </span>
+            </div>
+            ${isReal && (vm as any).is_manageable ? `
+              <div style="display: flex; gap: 6px; margin-top: 4px;">
+                ${vm.status !== 'running' ? `
+                  <button class="entity-btn action-vm-btn" data-vmid="${vm.vmid}" data-vm-action="start" data-vm-name="${vm.name}" style="background: rgba(0,255,157,0.15); border-color: #00ff9d; color: #00ff9d;">
+                    ▶ LIGAR
+                  </button>
+                ` : `
+                  <button class="entity-btn action-vm-btn" data-vmid="${vm.vmid}" data-vm-action="shutdown" data-vm-name="${vm.name}" style="background: rgba(255,51,102,0.15); border-color: #ff3366; color: #ff3366;">
+                    ⏻ DESLIGAR
+                  </button>
+                  <button class="entity-btn action-vm-btn" data-vmid="${vm.vmid}" data-vm-action="reboot" data-vm-name="${vm.name}" style="background: rgba(255,183,0,0.15); border-color: #ffb700; color: #ffb700;">
+                    ⟳ REINICIAR
+                  </button>
+                `}
+              </div>
+            ` : ''}
           </div>
         `).join('')}
       </div>
     `;
+
+    // Interatividade com ações de VM
+    this.mainPanel.querySelectorAll('.action-vm-btn').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        const target = ev.target as HTMLButtonElement;
+        const vmid = parseInt(target.getAttribute('data-vmid') || '0', 10);
+        const action = target.getAttribute('data-vm-action') || '';
+        const vmName = target.getAttribute('data-vm-name') || '';
+
+        const customEvent = new CustomEvent('jarvis-action-vm', {
+          detail: { vmid, action, vmName }
+        });
+        window.dispatchEvent(customEvent);
+      });
+    });
   }
 
   private renderNetwork() {

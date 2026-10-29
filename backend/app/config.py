@@ -32,13 +32,22 @@ class Settings(BaseSettings):
     PROXMOX_TOKEN_SECRET: Optional[str] = None
     PROXMOX_VERIFY_SSL: bool = False
     PROXMOX_TIMEOUT_SECONDS: int = 10
+    # Lista de VMIDs autorizados a receber comandos de ciclo de vida (ex: "101,102")
+    PROXMOX_ALLOWED_VMIDS: str = ""
     
     # Integração Home Assistant
     HOME_ASSISTANT_ENABLED: bool = False
     HOME_ASSISTANT_URL: Optional[str] = None
     HOME_ASSISTANT_TOKEN: Optional[str] = None
     HOME_ASSISTANT_TIMEOUT_SECONDS: int = 5
+    # Modo de descoberta: "labels" (automático por etiqueta do HA) ou "manual" (por lista de IDs)
+    HOME_ASSISTANT_DISCOVERY_MODE: str = "labels"
+    # Nome da etiqueta a procurar no Home Assistant (ex: "jarvis" ou "jarvis-xr")
+    HOME_ASSISTANT_DISCOVERY_LABEL: str = "jarvis"
+    # Fallback ou lista manual de entidades autorizadas
     HOME_ASSISTANT_ALLOWED_ENTITIES: str = ""
+    # Entidade no Home Assistant a atualizar quando o utilizador entra em VR/AR
+    HOME_ASSISTANT_PRESENCE_ENTITY: str = "input_boolean.jarvis_xr_active"
     
     # Integração DNS
     DNS_PROVIDER: str = "none"  # "pihole", "adguard", "none"
@@ -57,6 +66,18 @@ class Settings(BaseSettings):
         if not self.HOME_ASSISTANT_ALLOWED_ENTITIES:
             return []
         return [e.strip() for e in self.HOME_ASSISTANT_ALLOWED_ENTITIES.split(",") if e.strip()]
+
+    @property
+    def allowed_proxmox_vmids(self) -> List[int]:
+        """Devolve a lista de VMIDs autorizados a receber ações de ligar/desligar."""
+        if not self.PROXMOX_ALLOWED_VMIDS:
+            return []
+        vmids = []
+        for v in self.PROXMOX_ALLOWED_VMIDS.split(","):
+            v_clean = v.strip()
+            if v_clean.isdigit():
+                vmids.append(int(v_clean))
+        return vmids
 
     @property
     def monitored_services(self) -> List[Dict[str, Any]]:

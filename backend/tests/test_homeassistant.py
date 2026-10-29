@@ -81,3 +81,34 @@ async def test_control_light_authorized_success():
         assert data["data"]["entity_id"] == "light.escritorio"
         assert data["data"]["new_state"] == "on"
 
+
+def test_presence_endpoint():
+    """Valida o endpoint de notificação de presença em VR."""
+    with patch("app.integrations.homeassistant.ha_adapter.update_presence", return_value={"success": True, "active": True}):
+        payload = {"active": True, "device": "Meta Quest 3S"}
+        response = client.post("/api/home/presence", json=payload, headers=AUTH_HEADER)
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+
+
+def test_label_based_entity_authorization():
+    """Valida que uma entidade com a etiqueta 'jarvis' é autorizada dinamicamente."""
+    from app.integrations.homeassistant import ha_adapter
+    with patch.object(settings, "HOME_ASSISTANT_DISCOVERY_MODE", "labels"), \
+         patch.object(settings, "HOME_ASSISTANT_DISCOVERY_LABEL", "jarvis"):
+
+        # Entidade com label jarvis
+        authorized = ha_adapter._is_entity_authorized(
+            "light.candeeiro_novo",
+            attributes={"labels": ["jarvis", "iluminacao"], "friendly_name": "Candeeiro Novo"}
+        )
+        assert authorized is True
+
+        # Entidade sem label jarvis
+        unauthorized = ha_adapter._is_entity_authorized(
+            "light.luz_privada",
+            attributes={"labels": ["seguranca"], "friendly_name": "Luz Privada"}
+        )
+        assert unauthorized is False
+
+

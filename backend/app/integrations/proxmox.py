@@ -5,7 +5,14 @@ import httpx
 
 from app.config import settings
 from app.integrations.base import BaseAdapter
-from app.schemas import ProxmoxNode, ProxmoxVM, ProxmoxSummaryData
+from app.schemas import (
+    ProxmoxNode,
+    ProxmoxVM,
+    ProxmoxSummaryData,
+    ProxmoxStorageItem,
+    ProxmoxBackupStatus,
+    ActionExecutionResult
+)
 
 logger = logging.getLogger("jarvis.integrations.proxmox")
 
@@ -81,26 +88,156 @@ class ProxmoxAdapter(BaseAdapter):
             return []
 
         vms: List[ProxmoxVM] = []
+        allowed_vmids = settings.allowed_proxmox_vmids
+
         try:
             async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
                 res = await client.get(f"{self.url}/api2/json/cluster/resources?type=vm", headers=self._get_headers())
                 if res.status_code == 200:
                     raw_res = res.json().get("data", [])
                     for item in raw_res:
+                        vmid = int(item.get("vmid", 0))
+                        vm_type = item.get("type", "qemu")
+                        # Se a lista de VMIDs permitidos estiver vazia, todas são visíveis mas não acionáveis
+                        # Se estiver definida, apenas as listadas são acionáveis
+                        is_manageable = vmid in allowed_vmids if allowed_vmids else False
+
                         vms.append(ProxmoxVM(
-                            vmid=int(item.get("vmid", 0)),
-                            name=item.get("name", f"VM-{item.get('vmid')}"),
+                            vmid=vmid,
+                            name=item.get("name", f"VM-{vmid}"),
                             status=item.get("status", "unknown"),
-                            type=item.get("type", "qemu"),
+                            type=vm_type,
                             cpu=round(float(item.get("cpu", 0.0)) * 100, 1),
                             mem=int(item.get("mem", 0)),
                             maxmem=int(item.get("maxmem", 0)),
-                            node=item.get("node", "unknown")
+                            node=item.get("node", "unknown"),
+                            is_manageable=is_manageable
                         ))
         except Exception as e:
             logger.error(f"Erro ao obter recursos de VMs do Proxmox: {str(e)}")
 
         return vms
+
+    async def get_storage(self) -> List[ProxmoxStorageItem]:
+        """Obtém o estado e capacidade de todos os pools de armazenamento (ZFS, LVM, NFS)."""
+        if not self.is_configured():
+            return []
+
+        items: List[ProxmoxStorageItem] = []
+        try:
+            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
+                res = await client.get(f"{self.url}/api2/json/storage", headers=self._get_headers())
+                if res.status_code == 200:
+                    raw_storage = res.json().get("data", [])
+                    for s in raw_storage:
+                        total = float(s.get("total", 0))
+                        used = float(s.get("used", 0))
+                        used_gb = round(used / (1024 ** 3), 1)
+                        total_gb = round(total / (1024 ** 3), 1)
+                        pct = round((used / total * 100), 1) if total > 0 else 0.0
+
+                        items.append(ProxmoxStorageItem(
+                            storage=s.get("storage", "unknown"),
+                            type=s.get("type", "dir"),
+                            used_gb=used_gb,
+                            total_gb=total_gb,
+                            percent=pct
+                        ))
+        except Exception as e:
+            logger.error(f"Erro ao consultar pools de armazenamento do Proxmox: {str(e)}")
+
+        return items
+
+    async def get_backup_status(self) -> ProxmoxBackupStatus:
+        """Obtém o estado da última tarefa de backup (vzdump) do cluster."""
+        if not self.is_configured():
+            return ProxmoxBackupStatus(status="unknown", message="Proxmox desativado")
+
+        try:
+            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
+                res = await client.get(f"{self.url}/api2/json/cluster/tasks", headers=self._get_headers())
+                if res.status_code == 200:
+                    tasks = res.json().get("data", [])
+                    # Filtra tarefas de backup (type == "vzdump")
+                    vzdump_tasks = [t for t in tasks if t.get("type") == "vzdump"]
+                    if vzdump_tasks:
+                        last_task = vzdump_tasks[0]
+                        status_str = last_task.get("status", "unknown")
+                        is_ok = status_str == "OK"
+                        end_time = last_task.get("endtime") or last_task.get("starttime")
+
+                        return ProxmoxBackupStatus(
+                            last_backup_time=str(end_time),
+                            status="ok" if is_ok else "error",
+                            message=f"Último backup: {'Sucesso (OK)' if is_ok else status_str}"
+                        )
+                return ProxmoxBackupStatus(status="ok", message="Sem registos de erro de backup")
+        except Exception as e:
+            logger.warning(f"Erro ao verificar tarefas de backup: {str(e)}")
+            return ProxmoxBackupStatus(status="unknown", message=str(e)[:50])
+
+    async def control_vm(self, vmid: int, action: str, confirmed: bool = False) -> ActionExecutionResult:
+        """
+        Executa ações de ciclo de vida seguras numa VM/LXC autorizada.
+        Ações permitidas: 'start', 'shutdown' (desligar limpo por ACPI) e 'reboot'.
+        """
+        if not self.is_configured():
+            return ActionExecutionResult(success=False, entity_id=str(vmid), new_state="unknown", message="Proxmox não configurado")
+
+        allowed_vmids = settings.allowed_proxmox_vmids
+        if allowed_vmids and vmid not in allowed_vmids:
+            return ActionExecutionResult(
+                success=False,
+                entity_id=str(vmid),
+                new_state="unauthorized",
+                message=f"A VM/LXC {vmid} não está autorizada em PROXMOX_ALLOWED_VMIDS"
+            )
+
+        if action not in ["start", "shutdown", "reboot"]:
+            return ActionExecutionResult(
+                success=False,
+                entity_id=str(vmid),
+                new_state="invalid_action",
+                message=f"Ação '{action}' inválida. Use apenas start, shutdown ou reboot"
+            )
+
+        if not confirmed and action in ["shutdown", "reboot"]:
+            return ActionExecutionResult(
+                success=False,
+                entity_id=str(vmid),
+                new_state="requires_confirmation",
+                message=f"Confirma que pretendes executar '{action}' na máquina virtual {vmid}?"
+            )
+
+        # Localiza o nó onde a VM está a residir
+        vms = await self.get_resources_vms()
+        target_vm = next((v for v in vms if v.vmid == vmid), None)
+        if not target_vm:
+            return ActionExecutionResult(success=False, entity_id=str(vmid), new_state="not_found", message=f"VM {vmid} não encontrada no cluster")
+
+        vm_type = "lxc" if target_vm.type == "lxc" else "qemu"
+        api_path = f"{self.url}/api2/json/nodes/{target_vm.node}/{vm_type}/{vmid}/status/{action}"
+
+        try:
+            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
+                res = await client.post(api_path, headers=self._get_headers())
+                if res.status_code == 200:
+                    action_pt = "iniciada" if action == "start" else ("a desligar" if action == "shutdown" else "a reiniciar")
+                    return ActionExecutionResult(
+                        success=True,
+                        entity_id=str(vmid),
+                        new_state=action,
+                        message=f"Máquina virtual {vmid} ({target_vm.name}) {action_pt} com sucesso."
+                    )
+                return ActionExecutionResult(
+                    success=False,
+                    entity_id=str(vmid),
+                    new_state="error",
+                    message=f"Proxmox HTTP {res.status_code}: {res.text[:80]}"
+                )
+        except Exception as e:
+            logger.error(f"Erro ao executar '{action}' na VM {vmid}: {str(e)}")
+            return ActionExecutionResult(success=False, entity_id=str(vmid), new_state="error", message=f"Falha de rede: {str(e)}")
 
     async def get_summary(self) -> ProxmoxSummaryData:
         """Devolve resumo agregado com nós, métricas globais de CPU/RAM e contagem de VMs."""
@@ -116,6 +253,8 @@ class ProxmoxAdapter(BaseAdapter):
             )
 
         vms = await self.get_resources_vms()
+        storage_pools = await self.get_storage()
+        backup_status = await self.get_backup_status()
 
         nodes_online = sum(1 for n in nodes if n.status == "online")
         total_mem = sum(n.maxmem for n in nodes)
@@ -141,7 +280,9 @@ class ProxmoxAdapter(BaseAdapter):
             vms_running=vms_running,
             total_vms=len(vms),
             nodes=nodes,
-            vms=vms
+            vms=vms,
+            storage_pools=storage_pools,
+            backup_status=backup_status
         )
 
 

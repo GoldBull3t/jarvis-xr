@@ -66,3 +66,4 @@ jobs:
             org.opencontainers.image.title=JARVIS XR Frontend
             org.opencontainers.image.description=Interface tridimensional WebXR Three.js para o Meta Quest 3S
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
+

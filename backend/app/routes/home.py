@@ -7,7 +7,8 @@ from app.schemas import (
     ActionLightRequest,
     ActionSwitchRequest,
     ActionSceneRequest,
-    ActionExecutionResult
+    ActionExecutionResult,
+    PresenceUpdateRequest
 )
 from app.integrations.homeassistant import ha_adapter
 
@@ -93,4 +94,14 @@ async def action_scene(
         return APIResponse(status="error", error=result.message, data=result)
 
     return APIResponse(status="ok", data=result)
+
+
+@router.post("/presence", response_model=APIResponse)
+async def update_home_presence(
+    req: PresenceUpdateRequest,
+    _: str = Depends(verify_api_key)
+):
+    """Notifica o Home Assistant da entrada/saída de imersão nos Meta Quest 3S."""
+    res = await ha_adapter.update_presence(active=req.active, device=req.device)
+    return APIResponse(status="ok", data=res)
 

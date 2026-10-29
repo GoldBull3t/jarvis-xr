@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configurar Ligação ao JARVIS XR",
+        "description": "Introduza o endereço do backend do JARVIS XR e a sua chave secreta.",
+        "data": {
+          "host": "URL do JARVIS XR (ex: http://jarvis-backend:8000 ou IP)",
+          "api_key": "Chave API Secreta (JARVIS_API_KEY)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Não foi possível contactar o servidor JARVIS XR",
+      "invalid_auth": "Chave de autenticação inválida"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opções do JARVIS XR",
+        "description": "Selecione as entidades e configurações de presença.",
+        "data": {
+          "presence_automation": "Ativar automação de sala ao colocar os Meta Quest 3S",
+          "tag_label": "Etiqueta usada para descoberta automática (padrão: jarvis)"
+        }
+      }
+    }
+  }
+}

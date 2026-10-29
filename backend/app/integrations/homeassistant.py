@@ -29,11 +29,34 @@ class HomeAssistantAdapter(BaseAdapter):
             "Content-Type": "application/json"
         }
 
-    def _is_entity_authorized(self, entity_id: str) -> bool:
-        """Verifica se a entidade está expressamente na allowlist de segurança."""
-        allowed = settings.allowed_ha_entities
-        # Se nenhuma entidade estiver configurada, por segurança nenhuma é autorizada
-        return entity_id in allowed
+    def _is_entity_authorized(self, entity_id: str, attributes: Optional[Dict[str, Any]] = None) -> bool:
+        """
+        Verifica se a entidade está autorizada por:
+        1. Presença expressa na allowlist manual (settings.allowed_ha_entities)
+        2. Presença da etiqueta (Label) configurada (ex: 'jarvis') nos atributos ou registry
+        """
+        # 1. Verificação na allowlist manual
+        if entity_id in settings.allowed_ha_entities:
+            return True
+
+        # 2. Descoberta dinâmica por etiqueta (Labels do Home Assistant)
+        if settings.HOME_ASSISTANT_DISCOVERY_MODE == "labels" and attributes:
+            target_label = settings.HOME_ASSISTANT_DISCOVERY_LABEL.lower()
+            
+            # Verifica atributos diretos
+            raw_labels = attributes.get("labels") or attributes.get("label") or attributes.get("tags") or []
+            if isinstance(raw_labels, str):
+                raw_labels = [raw_labels]
+
+            for lbl in raw_labels:
+                if str(lbl).lower() == target_label:
+                    return True
+
+            # Se o friendly_name ou entity_id contiver [jarvis] como convenção alternativa
+            if f"[{target_label}]" in attributes.get("friendly_name", "").lower():
+                return True
+
+        return False
 
     async def health_check(self) -> Dict[str, Any]:
         """Testa se o Home Assistant está acessível via REST API."""
@@ -70,9 +93,9 @@ class HomeAssistantAdapter(BaseAdapter):
                 raw_states = res.json()
                 for item in raw_states:
                     entity_id = item.get("entity_id", "")
-                    if self._is_entity_authorized(entity_id):
+                    attrs = item.get("attributes", {})
+                    if self._is_entity_authorized(entity_id, attrs):
                         domain = entity_id.split(".")[0]
-                        attrs = item.get("attributes", {})
                         friendly_name = attrs.get("friendly_name", entity_id)
                         entities.append(EntityState(
                             entity_id=entity_id,
@@ -265,6 +288,46 @@ class HomeAssistantAdapter(BaseAdapter):
         except Exception as e:
             logger.error(f"Erro ao ativar cena {entity_id}: {str(e)}")
             return ActionExecutionResult(success=False, entity_id=entity_id, new_state="error", message=f"Falha de rede: {str(e)}")
+
+    async def update_presence(self, active: bool, device: str = "Meta Quest 3S") -> Dict[str, Any]:
+        """
+        Notifica o Home Assistant da entrada/saída de sessão WebXR.
+        Permite disparar automações de sala real (ex: iluminação ambiente de oficina).
+        """
+        if not self.is_configured():
+            return {"success": False, "message": "Home Assistant não configurado"}
+
+        target_entity = settings.HOME_ASSISTANT_PRESENCE_ENTITY
+        domain = target_entity.split(".")[0]
+        service = "turn_on" if active else "turn_off"
+
+        results = {}
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                # 1. Tenta atualizar input_boolean se existir
+                if domain in ["input_boolean", "switch"]:
+                    await client.post(
+                        f"{self.url}/api/services/{domain}/{service}",
+                        headers=self._get_headers(),
+                        json={"entity_id": target_entity}
+                    )
+
+                # 2. Dispara evento nativo 'jarvis_xr_presence' no bus do Home Assistant
+                event_res = await client.post(
+                    f"{self.url}/api/events/jarvis_xr_presence",
+                    headers=self._get_headers(),
+                    json={
+                        "active": active,
+                        "device": device,
+                        "timestamp": settings.JARVIS_ENV
+                    }
+                )
+                results["event_fired"] = event_res.status_code == 200
+                results["active"] = active
+                return {"success": True, "data": results}
+        except Exception as e:
+            logger.warning(f"Não foi possível notificar presença ao Home Assistant: {str(e)}")
+            return {"success": False, "error": str(e)}
 
 
 # Instância partilhada do adaptador

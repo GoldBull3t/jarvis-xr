@@ -104,3 +104,32 @@ def test_services_healthcheck_empty_or_mocked():
     assert data["status"] == "ok"
     assert isinstance(data["data"], list)
 
+
+def test_action_proxmox_vm_unauthorized():
+    """Valida que tentar controlar uma VM fora de PROXMOX_ALLOWED_VMIDS devolve 403 Forbidden."""
+    with patch.object(settings, "PROXMOX_ALLOWED_VMIDS", "101,102"):
+        payload = {
+            "vmid": 999,
+            "action": "start",
+            "confirmed": True
+        }
+        response = client.post("/api/proxmox/actions/vm", json=payload, headers=AUTH_HEADER)
+        assert response.status_code == 403
+        assert "não está autorizada" in response.json()["detail"]
+
+
+def test_action_proxmox_vm_requires_confirmation():
+    """Valida que desligar ou reiniciar uma VM sem confirmação explícita solicita confirmação."""
+    with patch.object(settings, "PROXMOX_ALLOWED_VMIDS", "101"):
+        payload = {
+            "vmid": 101,
+            "action": "shutdown",
+            "confirmed": False
+        }
+        response = client.post("/api/proxmox/actions/vm", json=payload, headers=AUTH_HEADER)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "error"
+        assert data["data"]["new_state"] == "requires_confirmation"
+
+

@@ -199,6 +199,37 @@ export class JarvisApiClient {
   }
 
   /**
+   * Executa ação segura de ciclo de vida (start, shutdown, reboot) em VM autorizada no Proxmox
+   */
+  public async actionProxmoxVm(vmid: number, action: 'start' | 'shutdown' | 'reboot', confirmed: boolean = false): Promise<ActionExecutionResult> {
+    const res = await fetch(`${this.baseUrl}/proxmox/actions/vm`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ vmid, action, confirmed })
+    });
+    const json: APIResponse<ActionExecutionResult> = await res.json();
+    if (json.status !== 'ok') {
+      throw new Error(json.error || 'Erro ao executar ação na VM Proxmox');
+    }
+    return json.data;
+  }
+
+  /**
+   * Notifica o Home Assistant da entrada/saída de imersão no Meta Quest 3S
+   */
+  public async sendPresence(active: boolean): Promise<void> {
+    try {
+      await fetch(`${this.baseUrl}/home/presence`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ active, device: 'Meta Quest 3S' })
+      });
+    } catch {
+      // Ignora falhas de presença sem interromper o utilizador
+    }
+  }
+
+  /**
    * Executa um comando determinístico por ID ou frase de voz
    */
   public async executeCommand(params: { command_id?: string; raw_phrase?: string }): Promise<CommandExecuteResult> {

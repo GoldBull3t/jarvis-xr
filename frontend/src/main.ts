@@ -164,6 +164,14 @@ class JarvisApp {
         await this.toggleEntity(entityId, domain);
       }
     }) as EventListener);
+
+    // Escuta evento de controlo seguro de VMs do Proxmox
+    window.addEventListener('jarvis-action-vm', (async (e: any) => {
+      const { vmid, action, vmName } = e.detail || {};
+      if (vmid && action) {
+        await this.handleVmAction(vmid, action, vmName);
+      }
+    }) as EventListener);
   }
 
   private onWindowResize() {
@@ -220,15 +228,17 @@ class JarvisApp {
       this.backgroundManager.setArPassthrough(this.isArActive);
 
       await this.renderer.xr.setSession(session);
+      await api.sendPresence(true);
 
       const btnEnterXR = document.getElementById('btn-enter-xr') as HTMLButtonElement;
       btnEnterXR.textContent = 'SAIR DO MODO XR';
 
-      session.addEventListener('end', () => {
+      session.addEventListener('end', async () => {
         this.xrSession = null;
         this.isArActive = false;
         this.backgroundManager.setArPassthrough(false);
         btnEnterXR.textContent = mode === 'immersive-ar' ? 'INICIAR SESSÃO AR (PASSTHROUGH)' : 'INICIAR SESSÃO VR';
+        await api.sendPresence(false);
       });
 
       this.speakFeedback('Modo imersivo Meta Quest ativado. Tracking de mãos e controladores operacional.');
@@ -288,6 +298,23 @@ class JarvisApp {
       const msg = err.message || 'Falha ao executar ação na entidade';
       this.speakFeedback(msg);
       this.uiOverlay.setVoiceFeedback(msg);
+    }
+  }
+
+  private async handleVmAction(vmid: number, action: 'start' | 'shutdown' | 'reboot', vmName?: string) {
+    const actionLabel = action === 'start' ? 'LIGAR' : (action === 'shutdown' ? 'DESLIGAR (ACPI)' : 'REINICIAR');
+    const msg = `Confirma que pretende ${actionLabel} a máquina virtual [${vmid}] ${vmName || ''}?`;
+    if (!confirm(msg)) return;
+
+    try {
+      const res = await api.actionProxmoxVm(vmid, action, true);
+      this.speakFeedback(res.message);
+      this.uiOverlay.setVoiceFeedback(res.message);
+      await this.loadInitialData();
+    } catch (err: any) {
+      const errMsg = err.message || 'Falha ao executar ação na VM Proxmox';
+      this.speakFeedback(errMsg);
+      this.uiOverlay.setVoiceFeedback(errMsg);
     }
   }
 

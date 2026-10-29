@@ -57,3 +57,4 @@ networks:
   cosmos-network:
     external: true
     name: cosmos-network
+

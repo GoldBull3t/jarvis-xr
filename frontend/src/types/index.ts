@@ -78,6 +78,21 @@ export interface ProxmoxVM {
   mem: number;
   maxmem: number;
   node: string;
+  is_manageable?: boolean;
+}
+
+export interface ProxmoxStorageItem {
+  storage: string;
+  type: string;
+  used_gb: number;
+  total_gb: number;
+  percent: number;
+}
+
+export interface ProxmoxBackupStatus {
+  last_backup_time?: string | null;
+  status: string;
+  message: string;
 }
 
 export interface ProxmoxSummaryData {
@@ -94,6 +109,8 @@ export interface ProxmoxSummaryData {
   total_vms: number;
   nodes: ProxmoxNode[];
   vms: ProxmoxVM[];
+  storage_pools?: ProxmoxStorageItem[];
+  backup_status?: ProxmoxBackupStatus | null;
 }
 
 export interface DnsSummaryData {

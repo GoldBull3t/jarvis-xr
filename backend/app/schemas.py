@@ -77,6 +77,7 @@ class HomeSummaryData(BaseModel):
     """Resumo agregado do Home Assistant."""
     configured: bool
     status: str  # "operational", "disabled", "unreachable"
+    discovery_mode: str = "labels"
     temperature_celsius: Optional[float] = None
     humidity_percent: Optional[float] = None
     lights_on: int = 0
@@ -129,6 +130,33 @@ class ProxmoxVM(BaseModel):
     mem: int
     maxmem: int
     node: str
+    ip_address: Optional[str] = None
+    is_manageable: bool = False
+
+
+class ProxmoxStorageItem(BaseModel):
+    storage: str
+    type: str
+    used_gb: float
+    total_gb: float
+    percent: float
+
+
+class ProxmoxBackupStatus(BaseModel):
+    last_backup_time: Optional[str] = None
+    status: str = "unknown"  # "ok", "error", "running", "unknown"
+    message: str = "Nenhum registo recente"
+
+
+class ProxmoxVMActionRequest(BaseModel):
+    vmid: int = Field(description="ID da máquina virtual ou container")
+    action: str = Field(description="Ação permitida: 'start', 'shutdown' ou 'reboot'")
+    confirmed: bool = Field(default=False, description="Confirmação explícita da operação")
+
+
+class PresenceUpdateRequest(BaseModel):
+    active: bool = Field(description="Indica se o utilizador está imerso em VR/AR")
+    device: str = Field(default="Meta Quest 3S", description="Identificador do dispositivo")
 
 
 class ProxmoxSummaryData(BaseModel):
@@ -145,6 +173,8 @@ class ProxmoxSummaryData(BaseModel):
     total_vms: int = 0
     nodes: List[ProxmoxNode] = Field(default_factory=list)
     vms: List[ProxmoxVM] = Field(default_factory=list)
+    storage_pools: List[ProxmoxStorageItem] = Field(default_factory=list)
+    backup_status: Optional[ProxmoxBackupStatus] = None
 
 
 # --- SCHEMAS DE DNS (PI-HOLE / ADGUARD) (FASE 5) ---
