@@ -1,0 +1,59 @@
+# ==============================================================================
+# JARVIS XR — COMPOSE PARA COSMOS CLOUD (SERVAPP)
+# Utiliza as imagens pré-compiladas automaticamente pelo GitHub Actions (GHCR)
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  jarvis-backend:
+    image: ghcr.io/goldbull3t/jarvis-xr/jarvis-backend:latest
+    container_name: jarvis-backend
+    restart: unless-stopped
+    environment:
+      - JARVIS_ENV=production
+      - JARVIS_LOG_LEVEL=INFO
+      # Gere um token aleatório seguro (mínimo 32 caracteres)
+      - JARVIS_API_KEY=substitua-por-um-token-secreto-aleatorio-32-chars
+
+      # Integração Proxmox VE
+      - PROXMOX_ENABLED=true
+      - PROXMOX_URL=https://192.168.1.100:8006
+      - PROXMOX_TOKEN_ID=jarvis-monitoring@pve!jarvis-token
+      - PROXMOX_TOKEN_SECRET=00000000-0000-0000-0000-000000000000
+      - PROXMOX_VERIFY_SSL=false
+      - PROXMOX_TIMEOUT_SECONDS=10
+
+      # Integração Home Assistant
+      - HOME_ASSISTANT_ENABLED=true
+      - HOME_ASSISTANT_URL=http://192.168.1.110:8123
+      - HOME_ASSISTANT_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      - HOME_ASSISTANT_TIMEOUT_SECONDS=5
+      - HOME_ASSISTANT_ALLOWED_ENTITIES=light.escritorio,switch.tomada_servidor
+
+      # Integração DNS Shield (opções: "pihole", "adguard", ou "none")
+      - DNS_PROVIDER=none
+      - PIHOLE_URL=http://192.168.1.120:80
+      - PIHOLE_API_TOKEN=
+      - ADGUARD_URL=http://192.168.1.120:3000
+      - ADGUARD_USERNAME=admin
+      - ADGUARD_PASSWORD=
+
+      # Allowlist de Serviços do Homelab
+      - HOMELAB_SERVICES=[{"name":"Proxmox VE","url":"https://192.168.1.100:8006"},{"name":"Home Assistant","url":"http://192.168.1.110:8123"}]
+    networks:
+      - cosmos-network
+
+  jarvis-frontend:
+    image: ghcr.io/goldbull3t/jarvis-xr/jarvis-frontend:latest
+    container_name: jarvis-frontend
+    restart: unless-stopped
+    depends_on:
+      - jarvis-backend
+    networks:
+      - cosmos-network
+
+networks:
+  cosmos-network:
+    external: true
+    name: cosmos-network
