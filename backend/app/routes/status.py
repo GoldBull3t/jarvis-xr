@@ -34,6 +34,13 @@ async def get_system_status(_: str = Depends(verify_api_key)):
             status="operational" if settings.DNS_PROVIDER in ["pihole", "adguard"] else "disabled",
             details=f"Fornecedor: {settings.DNS_PROVIDER}"
         ),
+        IntegrationStatus(
+            name="OpenWrt (NanoPi R3S)",
+            enabled=settings.OPENWRT_ENABLED,
+            configured=bool(settings.OPENWRT_URL),
+            status="operational" if settings.OPENWRT_ENABLED else "disabled",
+            details="Router Gateway, Largura de Banda WAN e Firewall" if settings.OPENWRT_ENABLED else "Integração desativada em .env"
+        ),
     ]
 
     active_count = sum(1 for i in integrations if i.enabled and i.configured)

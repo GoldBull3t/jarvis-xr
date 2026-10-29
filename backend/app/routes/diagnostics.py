@@ -10,6 +10,7 @@ from app.config import settings
 from app.integrations.homeassistant import ha_adapter
 from app.integrations.proxmox import pve_adapter
 from app.integrations.dns import dns_adapter
+from app.integrations.openwrt import openwrt_adapter
 
 logger = logging.getLogger("jarvis.routes.diagnostics")
 router = APIRouter(prefix="/diagnostics", tags=["Diagnostics"])
@@ -101,7 +102,31 @@ async def get_full_diagnostics(_: str = Depends(verify_api_key)):
             message="Nenhum fornecedor de DNS configurado"
         ))
 
-    # 4. Diagnóstico de Resolução de Nomes Local
+    # 4. Diagnóstico do Router OpenWrt (NanoPi R3S)
+    if settings.OPENWRT_ENABLED:
+        t0 = time.perf_counter()
+        health = await openwrt_adapter.health_check()
+        lat_ms = round((time.perf_counter() - t0) * 1000, 1)
+
+        is_ok = health.get("status") == "operational"
+        if not is_ok:
+            all_healthy = False
+
+        checks.append(DiagnosticCheckItem(
+            service="OpenWrt (NanoPi R3S)",
+            status="ok" if is_ok else "error",
+            latency_ms=lat_ms,
+            endpoint=settings.OPENWRT_URL,
+            message=health.get("message", "Sem resposta")
+        ))
+    else:
+        checks.append(DiagnosticCheckItem(
+            service="OpenWrt (NanoPi R3S)",
+            status="disabled",
+            message="Integração inativa nas configurações"
+        ))
+
+    # 5. Diagnóstico de Resolução de Nomes Local
     t0 = time.perf_counter()
     dns_resolved = False
     try:

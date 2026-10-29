@@ -22,6 +22,7 @@ import type {
   CameraEntityInfo,
   ProxmoxSummaryData,
   DnsSummaryData,
+  OpenWrtSummaryData,
   ServiceHealthItem,
   FullDiagnosticsData
 } from '../types';
@@ -305,6 +306,13 @@ export class JarvisApiClient {
    */
   public async getDnsSummary(): Promise<DnsSummaryData> {
     return this.request<DnsSummaryData>('/dns/summary');
+  }
+
+  /**
+   * Obtém telemetria em tempo real do OpenWrt (NanoPi R3S Gateway)
+   */
+  public async getOpenWrtSummary(): Promise<OpenWrtSummaryData> {
+    return this.request<OpenWrtSummaryData>('/openwrt/summary');
   }
 
   /**

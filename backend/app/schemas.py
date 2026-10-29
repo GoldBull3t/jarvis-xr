@@ -105,6 +105,9 @@ class HomeSummaryData(BaseModel):
     domains_summary: Dict[str, int] = Field(default_factory=dict)
     areas: List[str] = Field(default_factory=list)
     authorized_entities: List[EntityState] = Field(default_factory=list)
+    low_battery_devices: List[Dict[str, Any]] = Field(default_factory=list)
+    low_battery_count: int = 0
+    open_perimeters: List[str] = Field(default_factory=list)
 
 
 class ActionLightRequest(BaseModel):
@@ -254,10 +257,16 @@ class ProxmoxSummaryData(BaseModel):
     ram_usage_percent: float = 0.0
     vms_running: int = 0
     total_vms: int = 0
+    total_disk_read_mbs: float = 0.0
+    total_disk_write_mbs: float = 0.0
+    total_net_in_mbs: float = 0.0
+    total_net_out_mbs: float = 0.0
+    iops: int = 0
     nodes: List[ProxmoxNode] = Field(default_factory=list)
     vms: List[ProxmoxVM] = Field(default_factory=list)
     storage_pools: List[ProxmoxStorageItem] = Field(default_factory=list)
     backup_status: Optional[ProxmoxBackupStatus] = None
+    disks: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 # --- SCHEMAS DE DNS (PI-HOLE / ADGUARD) (FASE 5) ---
@@ -270,6 +279,59 @@ class DnsSummaryData(BaseModel):
     blocked_today: int = 0
     block_percentage: float = 0.0
     clients_active: int = 0
+    avg_processing_time_ms: float = 0.0
+    top_blocked_domains: List[Dict[str, Any]] = Field(default_factory=list)
+    top_queried_domains: List[Dict[str, Any]] = Field(default_factory=list)
+    top_clients: List[Dict[str, Any]] = Field(default_factory=list)
+    total_rules_count: int = 0
+    active_filters_count: int = 0
+    dns_rewrites_count: int = 0
+
+
+# --- SCHEMAS OPENWRT / NANOPI R3S ---
+
+class OpenWrtInterfaceStats(BaseModel):
+    name: str
+    up: bool = True
+    ip: Optional[str] = None
+    mac: Optional[str] = None
+    rx_bytes: int = 0
+    tx_bytes: int = 0
+    rx_rate_mbps: float = 0.0
+    tx_rate_mbps: float = 0.0
+
+
+class OpenWrtSummaryData(BaseModel):
+    configured: bool
+    status: str = "disabled"  # "operational", "disabled", "unreachable"
+    model: str = "FriendlyElec NanoPi R3S"
+    hostname: str = "OpenWrt"
+    kernel_version: Optional[str] = None
+    firmware_version: Optional[str] = None
+    uptime_seconds: int = 0
+    soc_temperature_celsius: Optional[float] = None
+    load_avg: List[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
+    ram_used_mb: float = 0.0
+    ram_total_mb: float = 0.0
+    ram_usage_percent: float = 0.0
+    wan_download_mbps: float = 0.0
+    wan_upload_mbps: float = 0.0
+    wan_ip: Optional[str] = None
+    wan_gateway: Optional[str] = None
+    dhcp_leases_count: int = 0
+    active_connections_count: int = 0
+    interfaces: List[OpenWrtInterfaceStats] = Field(default_factory=list)
+
+
+# --- SCHEMAS DE TELEMETRIA DO HEADSET / WEBXR ---
+
+class HeadsetTelemetry(BaseModel):
+    battery_level: Optional[float] = None
+    is_charging: Optional[bool] = None
+    fps: Optional[float] = None
+    frame_time_ms: Optional[float] = None
+    controller_battery_left: Optional[float] = None
+    controller_battery_right: Optional[float] = None
 
 
 # --- SCHEMAS DE SERVIÇOS DO HOMELAB (FASE 5) ---

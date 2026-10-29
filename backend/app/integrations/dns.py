@@ -81,7 +81,7 @@ class DnsAdapter(BaseAdapter):
             return DnsSummaryData(configured=True, provider="pihole", status="unreachable")
 
     async def _get_adguard_summary(self) -> DnsSummaryData:
-        """Consulta as estatísticas do AdGuard Home via Basic Auth."""
+        """Consulta as estatísticas aprofundadas do AdGuard Home via Basic Auth."""
         url = (settings.ADGUARD_URL or "").rstrip("/")
         stats_url = f"{url}/control/stats"
         auth = (settings.ADGUARD_USERNAME or "", settings.ADGUARD_PASSWORD or "")
@@ -95,6 +95,54 @@ class DnsAdapter(BaseAdapter):
                     blocked = int(data.get("num_blocked_filtering", 0))
                     pct = round((blocked / queries * 100), 2) if queries > 0 else 0.0
 
+                    # Latência Upstream em milissegundos
+                    raw_latency = float(data.get("avg_processing_time", 0.0))
+                    latency_ms = round(raw_latency * 1000.0, 1) if raw_latency < 10 else round(raw_latency, 1)
+
+                    # Top Domínios e Clientes
+                    top_blocked = []
+                    for item in data.get("top_blocked_domains", [])[:5]:
+                        if isinstance(item, dict):
+                            top_blocked.append(item)
+                        elif isinstance(item, list) and len(item) == 2:
+                            top_blocked.append({"domain": item[0], "count": item[1]})
+
+                    top_queried = []
+                    for item in data.get("top_queried_domains", [])[:5]:
+                        if isinstance(item, dict):
+                            top_queried.append(item)
+                        elif isinstance(item, list) and len(item) == 2:
+                            top_queried.append({"domain": item[0], "count": item[1]})
+
+                    top_clients = []
+                    for item in data.get("top_clients", [])[:5]:
+                        if isinstance(item, dict):
+                            top_clients.append(item)
+                        elif isinstance(item, list) and len(item) == 2:
+                            top_clients.append({"client": item[0], "count": item[1]})
+
+                    # Tenta obter status de filtros e regras
+                    rules_count = 0
+                    filters_count = 0
+                    try:
+                        f_res = await client.get(f"{url}/control/filtering/status")
+                        if f_res.status_code == 200:
+                            f_data = f_res.json()
+                            filters = f_data.get("filters", [])
+                            filters_count = len([f for f in filters if f.get("enabled", True)])
+                            rules_count = sum(f.get("rules_count", 0) for f in filters)
+                    except Exception:
+                        pass
+
+                    # Tenta obter contagem de DNS Rewrites locais (*.bernaslab.top)
+                    rewrites_count = 0
+                    try:
+                        rw_res = await client.get(f"{url}/control/rewrite/list")
+                        if rw_res.status_code == 200:
+                            rewrites_count = len(rw_res.json())
+                    except Exception:
+                        pass
+
                     return DnsSummaryData(
                         configured=True,
                         provider="adguard",
@@ -102,7 +150,14 @@ class DnsAdapter(BaseAdapter):
                         queries_today=queries,
                         blocked_today=blocked,
                         block_percentage=pct,
-                        clients_active=len(data.get("top_clients", []))
+                        clients_active=len(data.get("top_clients", [])),
+                        avg_processing_time_ms=latency_ms,
+                        top_blocked_domains=top_blocked,
+                        top_queried_domains=top_queried,
+                        top_clients=top_clients,
+                        total_rules_count=rules_count,
+                        active_filters_count=filters_count,
+                        dns_rewrites_count=rewrites_count
                     )
                 return DnsSummaryData(configured=True, provider="adguard", status="error")
         except Exception as e:

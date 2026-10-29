@@ -58,12 +58,19 @@ services:
       - HOME_ASSISTANT_ALLOWED_ENTITIES=light.escritorio,switch.tomada_servidor
 
       # --- Integração DNS Shield (Opções: "pihole", "adguard", ou "none") ---
-      - DNS_PROVIDER=none
+      - DNS_PROVIDER=adguard
       - PIHOLE_URL=http://192.168.30.2:80
       - PIHOLE_API_TOKEN=
       - ADGUARD_URL=http://192.168.30.2:3000
       - ADGUARD_USERNAME=admin
       - ADGUARD_PASSWORD=
+
+      # --- Integração OpenWrt (NanoPi R3S Gateway) ---
+      - OPENWRT_ENABLED=true
+      - OPENWRT_URL=http://192.168.10.1
+      - OPENWRT_USERNAME=root
+      - OPENWRT_PASSWORD=
+      - OPENWRT_WAN_INTERFACE=wan
 
       # --- Allowlist Opcional de Serviços HTTP a Monitorizar ---
       # Se deixar "[]", o backend auto-deteta e monitoriza o Proxmox e o Home Assistant reais

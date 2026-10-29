@@ -296,6 +296,40 @@ class ProxmoxAdapter(BaseAdapter):
 
         vms_running = sum(1 for vm in vms if vm.status == "running")
 
+        # Telemetria Profunda de I/O de Disco e Rede do Cluster
+        total_diskread_mb = 0.0
+        total_diskwrite_mb = 0.0
+        total_netin_mb = 0.0
+        total_netout_mb = 0.0
+        disks_list: List[Dict[str, Any]] = []
+
+        try:
+            async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
+                res = await client.get(f"{self.url}/api2/json/cluster/resources?type=vm", headers=self._get_headers())
+                if res.status_code == 200:
+                    for it in res.json().get("data", []):
+                        total_diskread_mb += float(it.get("diskread", 0)) / (1024 * 1024)
+                        total_diskwrite_mb += float(it.get("diskwrite", 0)) / (1024 * 1024)
+                        total_netin_mb += float(it.get("netin", 0)) / (1024 * 1024)
+                        total_netout_mb += float(it.get("netout", 0)) / (1024 * 1024)
+
+                # Obter discos físicos e saúde SMART do primeiro nó online
+                if nodes:
+                    online_node = next((n.node for n in nodes if n.status == "online"), nodes[0].node)
+                    disk_res = await client.get(f"{self.url}/api2/json/nodes/{online_node}/disks/list", headers=self._get_headers())
+                    if disk_res.status_code == 200:
+                        for d in disk_res.json().get("data", []):
+                            disks_list.append({
+                                "devpath": d.get("devpath", "/dev/sda"),
+                                "model": d.get("model", "Drive"),
+                                "size_gb": round(int(d.get("size", 0)) / (1024 ** 3), 1),
+                                "health": d.get("health", "PASSED"),
+                                "wearout": d.get("wearout", 0),
+                                "type": d.get("type", "ssd")
+                            })
+        except Exception as e:
+            logger.debug(f"Falha ao recolher telemetria I/O e SMART Proxmox: {e}")
+
         return ProxmoxSummaryData(
             configured=True,
             status="operational",
@@ -308,10 +342,15 @@ class ProxmoxAdapter(BaseAdapter):
             ram_usage_percent=ram_percent,
             vms_running=vms_running,
             total_vms=len(vms),
+            total_disk_read_mbs=round(total_diskread_mb, 2),
+            total_disk_write_mbs=round(total_diskwrite_mb, 2),
+            total_net_in_mbs=round(total_netin_mb, 2),
+            total_net_out_mbs=round(total_netout_mb, 2),
             nodes=nodes,
             vms=vms,
             storage_pools=storage_pools,
-            backup_status=backup_status
+            backup_status=backup_status,
+            disks=disks_list
         )
 
 

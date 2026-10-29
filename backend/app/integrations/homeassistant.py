@@ -295,11 +295,25 @@ class HomeAssistantAdapter(BaseAdapter):
         domains_summary: Dict[str, int] = {}
         unique_areas: set = set()
 
+        low_battery_devices: List[Dict[str, Any]] = []
+        open_perimeters: List[str] = []
+
         for ent in entities:
             d = ent.domain
             domains_summary[d] = domains_summary.get(d, 0) + 1
             if ent.area_name:
                 unique_areas.add(ent.area_name)
+
+            # Verificação de bateria dos sensores do homelab
+            dev_class_attr = ent.device_class or ent.attributes.get("device_class")
+            battery_attr = ent.attributes.get("battery_level") or ent.attributes.get("battery")
+            if battery_attr is not None:
+                try:
+                    bat_num = float(battery_attr)
+                    if bat_num < 20:
+                        low_battery_devices.append({"name": ent.friendly_name, "level": bat_num, "entity_id": ent.entity_id})
+                except (ValueError, TypeError):
+                    pass
 
             if d == "light":
                 total_lights += 1
@@ -340,18 +354,23 @@ class HomeAssistantAdapter(BaseAdapter):
                 total_binary += 1
                 dev_class = ent.device_class or ent.attributes.get("device_class")
                 # Alertas para portas, janelas, fugas de água, fumo, segurança ou movimento
-                if ent.state == "on" and dev_class in [
+                if ent.state in ["on", "open"] and dev_class in [
                     "door", "window", "garage_door", "opening", "smoke", "moisture",
                     "gas", "safety", "problem", "motion", "occupancy"
                 ]:
                     binary_alerts += 1
+                    if dev_class in ["door", "window", "garage_door", "opening"]:
+                        open_perimeters.append(f"{ent.friendly_name} ({ent.area_name or 'Perímetro'})")
 
             elif d == "sensor":
                 dev_class = ent.device_class or ent.attributes.get("device_class")
                 unit = ent.unit_of_measurement or ent.attributes.get("unit_of_measurement")
                 try:
                     num_val = float(ent.state)
-                    if (dev_class == "temperature" or "temp" in ent.entity_id) and temp_val is None:
+                    if dev_class == "battery" or "battery" in ent.entity_id:
+                        if num_val < 20:
+                            low_battery_devices.append({"name": ent.friendly_name, "level": num_val, "entity_id": ent.entity_id})
+                    elif (dev_class == "temperature" or "temp" in ent.entity_id) and temp_val is None:
                         temp_val = num_val
                     elif (dev_class == "humidity" or "hum" in ent.entity_id) and hum_val is None:
                         hum_val = num_val
@@ -390,7 +409,10 @@ class HomeAssistantAdapter(BaseAdapter):
             climates_count=climates_count,
             domains_summary=domains_summary,
             areas=sorted(list(unique_areas)),
-            authorized_entities=entities
+            authorized_entities=entities,
+            low_battery_devices=low_battery_devices,
+            low_battery_count=len(low_battery_devices),
+            open_perimeters=open_perimeters
         )
 
     async def control_light(

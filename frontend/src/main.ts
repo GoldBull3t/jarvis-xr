@@ -17,6 +17,7 @@ import type {
   HomeSummaryData,
   ProxmoxSummaryData,
   DnsSummaryData,
+  OpenWrtSummaryData,
   ServiceHealthItem,
   FullDiagnosticsData
 } from './types';
@@ -40,6 +41,7 @@ class JarvisApp {
   public homeData: HomeSummaryData | null = null;
   public pveData: ProxmoxSummaryData | null = null;
   public dnsData: DnsSummaryData | null = null;
+  public openwrtData: OpenWrtSummaryData | null = null;
   public servicesData: ServiceHealthItem[] | null = null;
   public diagnosticsData: FullDiagnosticsData | null = null;
   public commands: JarvisCommand[] = [];
@@ -85,7 +87,7 @@ class JarvisApp {
     this.coreVisualizer = new JarvisCoreVisualizer();
     this.coreVisualizer.group.scale.set(0.35, 0.35, 0.35);
     this.coreVisualizer.group.position.set(0, -0.05, -1.6);
-    // Question 8: Arc Reactor desativado no centro do campo de visão para Passthrough limpo na sala real
+    // Arc Reactor desativado por omissão para Passthrough limpo na sala real
     this.coreVisualizer.group.visible = false;
     this.scene.add(this.coreVisualizer.group);
 
@@ -138,7 +140,7 @@ class JarvisApp {
       }
     };
 
-    // 2. Gatilho Lateral (Grip / Squeeze): Agarra e reposiciona os painéis no espaço 3D (Question 5)
+    // 2. Gatilho Lateral (Grip / Squeeze): Agarra e reposiciona os painéis no espaço 3D
     this.xrManager.onSqueezeStartCallback = (event) => {
       const ray = this.xrManager.getControllerRay(event.controllerIndex);
       this.spatialPanels.startGrab(
@@ -224,8 +226,6 @@ class JarvisApp {
       } else if (action === 'close_panel') {
         this.speakFeedback(`Painel ${panelId} recolhido, senhor.`);
       }
-
-      this.xrManager.setInteractiveObjects(this.spatialPanels.getInteractiveMeshes());
     };
   }
 
@@ -402,13 +402,14 @@ class JarvisApp {
       await api.getHealth();
       this.uiOverlay.setConnectionState('online');
 
-      const [demoRes, cmds, homeRes, pveRes, dnsRes, servicesRes] = await Promise.all([
+      const [demoRes, cmds, homeRes, pveRes, dnsRes, servicesRes, openwrtRes] = await Promise.all([
         api.getDemoStatus().catch(() => null),
         api.getCommands().catch(() => []),
         api.getHomeSummary().catch((e) => { console.warn('Falha Home Assistant:', e); return null; }),
         api.getProxmoxSummary().catch((e) => { console.warn('Falha Proxmox:', e); return null; }),
         api.getDnsSummary().catch(() => null),
-        api.getServices().catch(() => null)
+        api.getServices().catch(() => null),
+        api.getOpenWrtSummary().catch(() => null)
       ]);
 
       const demo: DemoStatusData = demoRes || {
@@ -449,6 +450,7 @@ class JarvisApp {
       this.homeData = homeRes;
       this.pveData = pveRes;
       this.dnsData = dnsRes;
+      this.openwrtData = openwrtRes;
       this.servicesData = servicesRes;
 
       // Auto-deteta câmara se disponível no Home Assistant
@@ -457,9 +459,8 @@ class JarvisApp {
         if (cam) this.activeCameraEntityId = cam.entity_id;
       }
 
-      this.uiOverlay.updateData(demo, cmds, homeRes, pveRes, dnsRes, servicesRes, this.diagnosticsData);
+      this.uiOverlay.updateData(demo, cmds, homeRes, pveRes, dnsRes, servicesRes, this.diagnosticsData, openwrtRes);
       this.updateSpatialPanelsData(demo, homeRes, pveRes, dnsRes);
-      this.xrManager.setInteractiveObjects(this.spatialPanels.getInteractiveMeshes());
 
       // Inicia o canal SSE em tempo real (Pilar 3) e o diagnóstico em background (Pilar 4)
       this.initSSE();
@@ -503,6 +504,16 @@ class JarvisApp {
             hasUpdates = true;
           }
 
+          if (payload.openwrt) {
+            this.openwrtData = payload.openwrt;
+            hasUpdates = true;
+          }
+
+          if (payload.dns) {
+            this.dnsData = payload.dns;
+            hasUpdates = true;
+          }
+
           if (hasUpdates && this.demoData) {
             this.uiOverlay.updateData(
               this.demoData,
@@ -511,7 +522,8 @@ class JarvisApp {
               this.pveData,
               this.dnsData,
               this.servicesData,
-              this.diagnosticsData
+              this.diagnosticsData,
+              this.openwrtData
             );
             this.updateSpatialPanelsData(this.demoData, this.homeData, this.pveData, this.dnsData);
           }
@@ -568,7 +580,8 @@ class JarvisApp {
           this.pveData,
           this.dnsData,
           this.servicesData,
-          this.diagnosticsData
+          this.diagnosticsData,
+          this.openwrtData
         );
       }
       if (!silent) {
@@ -715,21 +728,22 @@ class JarvisApp {
   }
 
   private updateSpatialPanelsData(
-    demo: DemoStatusData,
+    _demo: DemoStatusData,
     home?: HomeSummaryData | null,
     pve?: ProxmoxSummaryData | null,
     dns?: DnsSummaryData | null
   ) {
     this.spatialPanels.setTelemetryData({
-      demo,
       home: home || null,
       pve: pve || null,
       dns: dns || null,
+      openwrt: this.openwrtData,
+      headset: this.xrManager.getHeadsetTelemetry(),
       diag: this.diagnosticsData,
       services: this.servicesData
     });
 
-    // Se houver alertas críticos perimétricos ou falha em nós do cluster, pulsa o Arc Reactor (Question 15)
+    // Se houver alertas críticos perimétricos ou falha em nós do cluster, pulsa o Arc Reactor
     const hasAlert = (home && home.binary_sensors_alert && home.binary_sensors_alert > 0) ||
                     (pve && pve.nodes_online < pve.total_nodes);
     if (hasAlert) {
@@ -737,8 +751,6 @@ class JarvisApp {
     } else if (!speechService.isCurrentlyListening()) {
       this.coreVisualizer.setStatus('normal');
     }
-
-    this.xrManager.setInteractiveObjects(this.spatialPanels.getInteractiveMeshes());
   }
 
   private setupVoiceInteractions() {
@@ -826,8 +838,6 @@ class JarvisApp {
       } else if (res.ui_action === 'stop_listening') {
         speechService.stopListening();
       }
-
-      this.xrManager.setInteractiveObjects(this.spatialPanels.getInteractiveMeshes());
     } catch (err: any) {
       soundFX.playAlert();
       const errMsg = err.message || 'Erro ao processar comando';
@@ -844,7 +854,9 @@ class JarvisApp {
     const delta = this.clock.getDelta();
     const elapsed = this.clock.getElapsedTime();
 
-    this.coreVisualizer.update(delta, elapsed);
+    if (this.coreVisualizer.group.visible) {
+      this.coreVisualizer.update(delta, elapsed);
+    }
     this.spatialPanels.update(delta, this.camera);
 
     // Pilar 2: Atualização do arrasto e rotação fluida dos painéis 3D no espaço
@@ -855,7 +867,8 @@ class JarvisApp {
       );
     }
 
-    this.xrManager.update();
+    this.xrManager.update(delta);
+    this.spatialPanels.setHeadsetTelemetry(this.xrManager.getHeadsetTelemetry());
     this.renderer.render(this.scene, this.camera);
   }
 }

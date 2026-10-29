@@ -69,6 +69,15 @@ class Settings(BaseSettings):
     ADGUARD_USERNAME: Optional[str] = None
     ADGUARD_PASSWORD: Optional[str] = None
     
+    # Integração OpenWrt (NanoPi R3S Gateway)
+    OPENWRT_ENABLED: bool = False
+    OPENWRT_URL: Optional[str] = None
+    OPENWRT_USERNAME: str = "root"
+    OPENWRT_PASSWORD: Optional[str] = None
+    OPENWRT_TIMEOUT_SECONDS: int = 5
+    OPENWRT_VERIFY_SSL: bool = False
+    OPENWRT_WAN_INTERFACE: str = "wan"
+
     # Allowlist de Serviços do Homelab para Healthcheck
     HOMELAB_SERVICES: str = "[]"
 

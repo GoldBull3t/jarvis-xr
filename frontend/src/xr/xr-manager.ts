@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { XRHandModelFactory } from 'three/examples/jsm/webxr/XRHandModelFactory.js';
+import type { HeadsetTelemetry } from '../types';
 
 export interface XRInteractionEvent {
   intersectedObject: THREE.Object3D;
@@ -39,13 +40,19 @@ export class XRManager {
   private interactiveObjects: THREE.Object3D[] = [];
   private interactiveObjectsProvider?: () => THREE.Object3D[];
 
+  // Telemetria do Headset & Comandos
+  private currentFps: number = 72;
+  private currentFrameTimeMs: number = 13.8;
+  private headsetBattery: number | null = null;
+  private headsetIsCharging: boolean | null = null;
+  private controllerBatteryLeft: number | null = null;
+  private controllerBatteryRight: number | null = null;
+
   // Callbacks de interação
   public onSelectCallback?: (event: XRInteractionEvent) => void;
-  public onSelectStartCallback?: (event: XRInteractionEvent) => void;
   public onSelectEndCallback?: (controllerIndex: number) => void;
   public onSqueezeStartCallback?: (event: XRInteractionEvent) => void;
   public onSqueezeEndCallback?: (controllerIndex: number) => void;
-  public onHoverCallback?: (event: XRInteractionEvent | null) => void;
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene) {
     this.renderer = renderer;
@@ -103,6 +110,24 @@ export class XRManager {
 
     // 5. Registar Eventos de Disparo e Manipulação Tátil
     this.setupSelectEvents();
+    this.initBatteryMonitoring();
+  }
+
+  private initBatteryMonitoring() {
+    try {
+      if ('getBattery' in navigator && typeof (navigator as any).getBattery === 'function') {
+        (navigator as any).getBattery().then((battery: any) => {
+          this.headsetBattery = Math.round(battery.level * 100);
+          this.headsetIsCharging = battery.charging;
+          battery.addEventListener('levelchange', () => {
+            this.headsetBattery = Math.round(battery.level * 100);
+          });
+          battery.addEventListener('chargingchange', () => {
+            this.headsetIsCharging = battery.charging;
+          });
+        }).catch(() => {});
+      }
+    } catch {}
   }
 
   /**
@@ -144,7 +169,6 @@ export class XRManager {
     // Controlador 0: Gatilho Frontal (Trigger / Select) para cliques
     this.controller1.addEventListener('selectstart', () => {
       this.handleSelect(0);
-      this.handleSelectStart(0);
     });
     this.controller1.addEventListener('selectend', () => {
       if (this.onSelectEndCallback) this.onSelectEndCallback(0);
@@ -161,7 +185,6 @@ export class XRManager {
     // Controlador 1: Gatilho Frontal (Trigger / Select) para cliques
     this.controller2.addEventListener('selectstart', () => {
       this.handleSelect(1);
-      this.handleSelectStart(1);
     });
     this.controller2.addEventListener('selectend', () => {
       if (this.onSelectEndCallback) this.onSelectEndCallback(1);
@@ -174,21 +197,6 @@ export class XRManager {
     this.controller2.addEventListener('squeezeend', () => {
       if (this.onSqueezeEndCallback) this.onSqueezeEndCallback(1);
     });
-  }
-
-  private handleSelectStart(controllerIndex: number) {
-    const hit = this.raycastController(controllerIndex);
-    if (hit) {
-      this.triggerHaptic(controllerIndex, 0.5, 40);
-      if (this.onSelectStartCallback) {
-        this.onSelectStartCallback({
-          intersectedObject: hit.object,
-          point: hit.point,
-          uv: hit.uv,
-          controllerIndex
-        });
-      }
-    }
   }
 
   private handleSqueezeStart(controllerIndex: number) {
@@ -253,7 +261,7 @@ export class XRManager {
   }
 
   /**
-   * Feedback háptico de vibração tátil nos comandos Meta Quest Touch Plus (Question 14)
+   * Feedback háptico de vibração tátil nos comandos Meta Quest Touch Plus
    */
   public triggerHaptic(controllerIndex: number = 0, intensity: number = 0.5, durationMs: number = 40) {
     const session = this.renderer.xr.getSession();
@@ -304,10 +312,29 @@ export class XRManager {
    * Atualização contínua por frame (executada no render loop XR)
    * Suporta apontar, retículo e redimensionamento dinâmico do feixe em ambos os comandos
    */
-  public update() {
+  public update(delta: number = 0.016) {
+    if (delta > 0) {
+      const instantFps = 1 / delta;
+      this.currentFps = Math.round(this.currentFps * 0.9 + instantFps * 0.1);
+      this.currentFrameTimeMs = Math.round(delta * 1000);
+    }
+
     if (!this.renderer.xr.isPresenting) {
       this.reticle.visible = false;
       return;
+    }
+
+    // Leitura de telemetria dos comandos Touch Plus
+    const session = this.renderer.xr.getSession();
+    if (session && session.inputSources) {
+      for (const source of session.inputSources) {
+        const bat = (source as any).gamepad?.battery ?? (source as any).battery;
+        const batVal = typeof bat === 'number' ? Math.round(bat * 100) : (bat?.level ? Math.round(bat.level * 100) : null);
+        if (batVal !== null) {
+          if (source.handedness === 'left') this.controllerBatteryLeft = batVal;
+          if (source.handedness === 'right') this.controllerBatteryRight = batVal;
+        }
+      }
     }
 
     const hit1 = this.raycastController(0);
@@ -328,7 +355,6 @@ export class XRManager {
 
     // O retículo segue o comando que estiver a apontar
     const hit = hit1 || hit2;
-    const activeIndex = hit1 ? 0 : 1;
 
     if (hit) {
       this.reticle.visible = true;
@@ -339,20 +365,19 @@ export class XRManager {
         this.reticle.position.addScaledVector(hit.face.normal, 0.003);
         this.reticle.lookAt(this.reticle.position.clone().add(hit.face.normal));
       }
-
-      if (this.onHoverCallback) {
-        this.onHoverCallback({
-          intersectedObject: hit.object,
-          point: hit.point,
-          uv: hit.uv,
-          controllerIndex: activeIndex
-        });
-      }
     } else {
       this.reticle.visible = false;
-      if (this.onHoverCallback) {
-        this.onHoverCallback(null);
-      }
     }
+  }
+
+  public getHeadsetTelemetry(): HeadsetTelemetry {
+    return {
+      fps: this.currentFps,
+      frame_time_ms: this.currentFrameTimeMs,
+      battery_level: this.headsetBattery,
+      is_charging: this.headsetIsCharging,
+      controller_battery_left: this.controllerBatteryLeft,
+      controller_battery_right: this.controllerBatteryRight
+    };
   }
 }

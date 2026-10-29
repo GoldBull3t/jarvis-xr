@@ -10,6 +10,7 @@ import type {
   EntityState,
   ProxmoxSummaryData,
   DnsSummaryData,
+  OpenWrtSummaryData,
   ServiceHealthItem,
   FullDiagnosticsData
 } from '../types';
@@ -30,6 +31,7 @@ export class UiOverlayManager {
   private homeData: HomeSummaryData | null = null;
   private pveData: ProxmoxSummaryData | null = null;
   private dnsData: DnsSummaryData | null = null;
+  private openwrtData: OpenWrtSummaryData | null = null;
   private servicesData: ServiceHealthItem[] | null = null;
   private diagnosticsData: FullDiagnosticsData | null = null;
   private commands: JarvisCommand[] = [];
@@ -156,7 +158,8 @@ export class UiOverlayManager {
     pveData?: ProxmoxSummaryData | null,
     dnsData?: DnsSummaryData | null,
     servicesData?: ServiceHealthItem[] | null,
-    diagnosticsData?: FullDiagnosticsData | null
+    diagnosticsData?: FullDiagnosticsData | null,
+    openwrtData?: OpenWrtSummaryData | null
   ) {
     this.demoData = demoData;
     this.commands = commands;
@@ -165,6 +168,7 @@ export class UiOverlayManager {
     if (dnsData !== undefined) this.dnsData = dnsData;
     if (servicesData !== undefined) this.servicesData = servicesData;
     if (diagnosticsData !== undefined) this.diagnosticsData = diagnosticsData;
+    if (openwrtData !== undefined) this.openwrtData = openwrtData;
     this.render();
   }
 
@@ -429,6 +433,21 @@ export class UiOverlayManager {
               </div>
             </div>
           </div>
+
+          ${(this.homeData?.low_battery_devices && this.homeData.low_battery_devices.length > 0) || (this.homeData?.open_perimeters && this.homeData.open_perimeters.length > 0) ? `
+            <div style="margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px;">
+              ${this.homeData?.open_perimeters && this.homeData.open_perimeters.length > 0 ? `
+                <div style="background: rgba(255, 51, 102, 0.15); border: 1px solid #ff3366; border-radius: 4px; padding: 6px 10px; font-size: 0.72rem; color: #ff8fa3;">
+                  ⚠️ <strong>PERÍMETRO ABERTO:</strong> ${this.homeData.open_perimeters.join(', ')}
+                </div>
+              ` : ''}
+              ${this.homeData?.low_battery_devices && this.homeData.low_battery_devices.length > 0 ? `
+                <div style="background: rgba(255, 183, 0, 0.12); border: 1px solid #ffb700; border-radius: 4px; padding: 6px 10px; font-size: 0.72rem; color: #ffca4a;">
+                  🪫 <strong>BATERIA FRACA (&lt;20%):</strong> ${this.homeData.low_battery_devices.map(b => `${b.name} (${b.level}%)`).join(', ')}
+                </div>
+              ` : ''}
+            </div>
+          ` : ''}
 
           <!-- Barra de Pesquisa e Filtros de Categoria -->
           <div style="margin-bottom: 10px;">
@@ -983,6 +1002,23 @@ export class UiOverlayManager {
           <div class="progress-bar-fill" style="width: ${Math.min(ramPercent, 100)}%"></div>
         </div>
 
+        ${isReal ? `
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; background: rgba(0, 229, 255, 0.05); padding: 8px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15);">
+            <div>
+              <div style="font-size: 0.65rem; color: var(--color-text-dim);">DISCO I/O CLUSTER</div>
+              <div style="font-weight: bold; color: #fff; font-size: 0.82rem; font-family: monospace;">
+                R: ${(this.pveData?.total_disk_read_mbs || 0).toFixed(1)} <small>MB/s</small> | W: ${(this.pveData?.total_disk_write_mbs || 0).toFixed(1)} <small>MB/s</small>
+              </div>
+            </div>
+            <div>
+              <div style="font-size: 0.65rem; color: var(--color-text-dim);">REDE I/O CLUSTER</div>
+              <div style="font-weight: bold; color: #00ff9d; font-size: 0.82rem; font-family: monospace;">
+                IN: ${(this.pveData?.total_net_in_mbs || 0).toFixed(1)} <small>MB/s</small> | OUT: ${(this.pveData?.total_net_out_mbs || 0).toFixed(1)} <small>MB/s</small>
+              </div>
+            </div>
+          </div>
+        ` : ''}
+
         ${isReal && this.pveData!.storage_pools && this.pveData!.storage_pools.length > 0 ? `
           <div style="margin-top: 14px; font-weight: bold; color: var(--color-primary-cyan); font-size: 0.8rem;">
             POOLS DE ARMAZENAMENTO (STORAGE):
@@ -994,6 +1030,20 @@ export class UiOverlayManager {
             </div>
             <div class="progress-bar-container" style="height: 4px; margin-bottom: 6px;">
               <div class="progress-bar-fill" style="width: ${Math.min(s.percent, 100)}%"></div>
+            </div>
+          `).join('')}
+        ` : ''}
+
+        ${isReal && this.pveData!.disks && this.pveData!.disks.length > 0 ? `
+          <div style="margin-top: 14px; font-weight: bold; color: var(--color-primary-cyan); font-size: 0.8rem;">
+            DISCOS FÍSICOS & SAÚDE S.M.A.R.T.:
+          </div>
+          ${this.pveData!.disks.map(d => `
+            <div class="data-row" style="padding: 3px 0; font-size: 0.72rem;">
+              <span class="data-label">${d.devpath} <small style="color: #7da5c2">(${d.model || d.type || ''})</small>:</span>
+              <span class="data-value" style="color: ${d.health === 'PASSED' || d.health === 'OK' ? '#00ff9d' : '#ff3366'}">
+                SMART: ${d.health || 'OK'} ${d.wearout !== undefined && d.wearout !== null ? `(Desgaste: ${d.wearout}%)` : ''}
+              </span>
             </div>
           `).join('')}
         ` : ''}
@@ -1059,43 +1109,175 @@ export class UiOverlayManager {
   }
 
   private renderNetwork() {
-    const isReal = this.dnsData && this.dnsData.configured && this.dnsData.status === 'operational';
-    const provider = isReal ? `${this.dnsData!.provider.toUpperCase()} [REAL]` : this.demoData!.dns.provider;
-    const queries = isReal ? this.dnsData!.queries_today : this.demoData!.dns.queries_today;
-    const blocked = isReal ? this.dnsData!.blocked_today : this.demoData!.dns.blocked_today;
-    const blockPct = isReal ? this.dnsData!.block_percentage : this.demoData!.dns.block_percentage;
-    const clients = isReal ? this.dnsData!.clients_active : this.demoData!.dns.clients_active;
+    const isDnsReal = this.dnsData && this.dnsData.configured && this.dnsData.status === 'operational';
+    const provider = isDnsReal ? `${this.dnsData!.provider.toUpperCase()} [REAL]` : (this.demoData?.dns?.provider || 'ADGUARD HOME');
+    const queries = isDnsReal ? this.dnsData!.queries_today : (this.demoData?.dns?.queries_today || 0);
+    const blocked = isDnsReal ? this.dnsData!.blocked_today : (this.demoData?.dns?.blocked_today || 0);
+    const blockPct = isDnsReal ? this.dnsData!.block_percentage : (this.demoData?.dns?.block_percentage || 0);
+    const clients = isDnsReal ? this.dnsData!.clients_active : (this.demoData?.dns?.clients_active || 0);
+
+    const ow = this.openwrtData;
+    const isOwReal = Boolean(ow && ow.configured && ow.status === 'operational');
+    const owConfigured = Boolean(ow && ow.configured);
 
     this.mainPanel.innerHTML = `
-      <div class="panel-card">
-        <div class="panel-title">
-          <span>REDE & DNS // ESCUDO DE PROTEÇÃO</span>
-          <span class="badge-demo" style="${isReal ? 'color: var(--color-success); border-color: var(--color-success); background: rgba(0, 255, 157, 0.1);' : ''}">
-            ${isReal ? 'DNS REAL' : 'DEMO'}
-          </span>
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <!-- CARTÃO 1: GATEWAY & ROUTER NANOPIR3S (OPENWRT) -->
+        <div class="panel-card">
+          <div class="panel-title">
+            <span>ROUTER & GATEWAY // NANOPIR3S (OPENWRT)</span>
+            <span class="badge-demo" style="${isOwReal ? 'color: var(--color-success); border-color: var(--color-success); background: rgba(0, 255, 157, 0.1);' : owConfigured ? 'color: #ff3366; border-color: #ff3366; background: rgba(255, 51, 102, 0.15);' : ''}">
+              ${isOwReal ? 'OPENWRT REAL' : owConfigured ? 'ERRO CONEXÃO' : 'NÃO CONFIGURADO'}
+            </span>
+          </div>
+
+          ${isOwReal && ow ? `
+            <div class="data-row">
+              <span class="data-label">Dispositivo / Modelo:</span>
+              <span class="data-value">${ow.hostname || 'OpenWrt'} <small style="color: #7da5c2">(${ow.model || 'NanoPi R3S'})</small></span>
+            </div>
+            <div class="data-row">
+              <span class="data-label">Firmware / Kernel:</span>
+              <span class="data-value" style="font-size: 0.72rem;">${ow.firmware_version || 'OpenWrt'} • Linux ${ow.kernel_version || ''}</span>
+            </div>
+
+            <!-- Taxas WAN em Tempo Real -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; background: rgba(0, 229, 255, 0.05); padding: 8px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15);">
+              <div>
+                <div style="font-size: 0.65rem; color: var(--color-text-dim);">WAN DOWNLOAD</div>
+                <div style="font-weight: bold; color: #00ff9d; font-size: 1.05rem; font-family: monospace;">
+                  ↓ ${(ow.wan_download_mbps || 0).toFixed(2)} <span style="font-size: 0.65rem;">Mbps</span>
+                </div>
+              </div>
+              <div>
+                <div style="font-size: 0.65rem; color: var(--color-text-dim);">WAN UPLOAD</div>
+                <div style="font-weight: bold; color: #00e5ff; font-size: 1.05rem; font-family: monospace;">
+                  ↑ ${(ow.wan_upload_mbps || 0).toFixed(2)} <span style="font-size: 0.65rem;">Mbps</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="data-row">
+              <span class="data-label">Temperatura SoC (Rockchip):</span>
+              <span class="data-value" style="color: ${(ow.soc_temperature_celsius || 0) > 65 ? '#ff3366' : (ow.soc_temperature_celsius || 0) > 50 ? '#ffb700' : '#00ff9d'}; font-weight: bold;">
+                ${ow.soc_temperature_celsius !== null && ow.soc_temperature_celsius !== undefined ? `${ow.soc_temperature_celsius.toFixed(1)} °C` : 'N/D'}
+              </span>
+            </div>
+
+            <div class="data-row" style="margin-top: 6px;">
+              <span class="data-label">Memória RAM:</span>
+              <span class="data-value">${ow.ram_used_mb || 0} MB / ${ow.ram_total_mb || 0} MB (${ow.ram_usage_percent || 0}%)</span>
+            </div>
+            <div class="progress-bar-container">
+              <div class="progress-bar-fill" style="width: ${Math.min(ow.ram_usage_percent || 0, 100)}%"></div>
+            </div>
+
+            <div class="data-row">
+              <span class="data-label">Load Average (1m, 5m, 15m):</span>
+              <span class="data-value" style="font-family: monospace;">
+                ${ow.load_avg ? ow.load_avg.map((l: number) => l.toFixed(2)).join(', ') : 'N/D'}
+              </span>
+            </div>
+
+            <div class="data-row">
+              <span class="data-label">Tabela de Conexões Ativas:</span>
+              <span class="data-value">${ow.active_connections_count || 0} estados</span>
+            </div>
+
+            <div class="data-row">
+              <span class="data-label">Concessões DHCP Ativas:</span>
+              <span class="data-value" style="color: #00ff9d;">${ow.dhcp_leases_count || 0} clientes</span>
+            </div>
+
+            ${ow.interfaces && ow.interfaces.length > 0 ? `
+              <div style="margin-top: 10px; font-size: 0.75rem; font-weight: bold; color: var(--color-primary-cyan);">
+                INTERFACES DE REDE GIGABIT:
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 4px;">
+                ${ow.interfaces.map(iface => `
+                  <div style="display: flex; justify-content: space-between; font-size: 0.72rem; padding: 4px 6px; background: rgba(5,11,20,0.5); border-radius: 3px; border-left: 2px solid ${iface.up ? '#00ff9d' : '#ff3366'};">
+                    <span style="font-family: monospace; font-weight: bold;">${iface.name} <small style="color: #7da5c2">(${iface.up ? 'UP' : 'DOWN'})</small></span>
+                    <span style="color: var(--color-text-dim); font-family: monospace;">
+                      ↓ ${(iface.rx_bytes / (1024*1024)).toFixed(1)} MB | ↑ ${(iface.tx_bytes / (1024*1024)).toFixed(1)} MB
+                    </span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          ` : owConfigured ? `
+            <p class="data-label" style="color: #ff3366; font-size: 0.8rem;">
+              ⚠️ Erro ao contactar NanoPi R3S via LuCI/Ubus RPC. Verifique IP e credenciais no .env.
+            </p>
+          ` : `
+            <p class="data-label" style="font-size: 0.78rem; line-height: 1.5; color: var(--color-text-dim);">
+              OpenWrt desativado ou não configurado. Defina <code>OPENWRT_ENABLED=true</code> e o IP do NanoPi R3S no seu <code>.env</code> ou Cosmos.
+            </p>
+          `}
         </div>
-        <div class="data-row">
-          <span class="data-label">Fornecedor DNS:</span>
-          <span class="data-value">${provider}</span>
-        </div>
-        <div class="data-row">
-          <span class="data-label">Estado de Proteção:</span>
-          <span class="data-value" style="color: #00ff9d;">OPERACIONAL</span>
-        </div>
-        <div class="data-row">
-          <span class="data-label">Consultas Hoje:</span>
-          <span class="data-value">${queries.toLocaleString()}</span>
-        </div>
-        <div class="data-row">
-          <span class="data-label">Ameaças / Anúncios Bloqueados:</span>
-          <span class="data-value" style="color: #00e5ff;">${blocked.toLocaleString()} (${blockPct}%)</span>
-        </div>
-        <div class="progress-bar-container">
-          <div class="progress-bar-fill" style="width: ${Math.min(blockPct * 2, 100)}%"></div>
-        </div>
-        <div class="data-row">
-          <span class="data-label">Clientes Conectados:</span>
-          <span class="data-value">${clients} dispositivos</span>
+
+        <!-- CARTÃO 2: DNS & ESCUDO ADGUARD HOME -->
+        <div class="panel-card">
+          <div class="panel-title">
+            <span>DNS // ESCUDO DE PROTEÇÃO (ADGUARD HOME)</span>
+            <span class="badge-demo" style="${isDnsReal ? 'color: var(--color-success); border-color: var(--color-success); background: rgba(0, 255, 157, 0.1);' : ''}">
+              ${isDnsReal ? 'ADGUARD REAL' : 'DEMO'}
+            </span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Fornecedor DNS:</span>
+            <span class="data-value">${provider}</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Estado de Proteção:</span>
+            <span class="data-value" style="color: #00ff9d;">OPERACIONAL</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Consultas Hoje:</span>
+            <span class="data-value">${queries.toLocaleString()}</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Ameaças / Anúncios Bloqueados:</span>
+            <span class="data-value" style="color: #00e5ff;">${blocked.toLocaleString()} (${blockPct}%)</span>
+          </div>
+          <div class="progress-bar-container">
+            <div class="progress-bar-fill" style="width: ${Math.min(blockPct * 2, 100)}%"></div>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Clientes Conectados:</span>
+            <span class="data-value">${clients} dispositivos</span>
+          </div>
+
+          ${isDnsReal && this.dnsData!.avg_processing_time_ms !== undefined ? `
+            <div class="data-row">
+              <span class="data-label">Latência Média Upstream:</span>
+              <span class="data-value" style="color: #00ff9d; font-family: monospace;">
+                ${this.dnsData!.avg_processing_time_ms.toFixed(1)} ms
+              </span>
+            </div>
+          ` : ''}
+
+          ${isDnsReal && (this.dnsData!.total_rules_count || this.dnsData!.dns_rewrites_count) ? `
+            <div class="data-row">
+              <span class="data-label">Regras de Filtro & Rewrites:</span>
+              <span class="data-value">
+                ${(this.dnsData!.total_rules_count || 0).toLocaleString()} regras • ${this.dnsData!.dns_rewrites_count || 0} DNS rewrites
+              </span>
+            </div>
+          ` : ''}
+
+          ${isDnsReal && this.dnsData!.top_blocked_domains && this.dnsData!.top_blocked_domains.length > 0 ? `
+            <div style="margin-top: 10px; font-size: 0.75rem; font-weight: bold; color: #ff3366;">
+              TOP DOMÍNIOS BLOQUEADOS:
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 3px; margin-top: 4px;">
+              ${this.dnsData!.top_blocked_domains.slice(0, 4).map((item: { domain: string; count: number }) => `
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem; padding: 2px 4px; background: rgba(255, 51, 102, 0.08); border-radius: 2px;">
+                  <span style="font-family: monospace; color: #ff8fa3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px;">${item.domain}</span>
+                  <span style="font-weight: bold; color: #fff;">${item.count.toLocaleString()}</span>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
         </div>
       </div>
     `;
