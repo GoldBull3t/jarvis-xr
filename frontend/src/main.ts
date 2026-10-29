@@ -83,6 +83,8 @@ class JarvisApp {
     // 3. Inicializar Componentes 3D e HUD
     this.backgroundManager = new SceneBackgroundManager(this.scene);
     this.coreVisualizer = new JarvisCoreVisualizer();
+    this.coreVisualizer.group.scale.set(0.35, 0.35, 0.35);
+    this.coreVisualizer.group.position.set(0, -0.05, -1.6);
     this.scene.add(this.coreVisualizer.group);
 
     this.spatialPanels = new SpatialPanelManager3D();
@@ -105,34 +107,45 @@ class JarvisApp {
   }
 
   private setupXREvents() {
-    // Liga clique do raio laser / pinch aos botões nos painéis holográficos 3D
-    this.xrManager.onSelectCallback = (event) => {
-      this.spatialPanels.handleRaycastClick(event.intersectedObject, event.uv);
-    };
+    // Liga os alvos holográficos interativos ao Raycaster dos comandos Touch Plus
+    this.xrManager.setInteractiveObjectsProvider(() => this.spatialPanels.getInteractiveMeshes());
 
-    // Pilar 2: Agarrar e mover painéis no espaço 3D (SelectStart e SqueezeStart)
-    this.xrManager.onSelectStartCallback = (event) => {
-      this.spatialPanels.startGrab(
-        event.intersectedObject,
-        event.controllerIndex,
-        event.point,
-        event.uv,
-        false
-      );
+    // 1. Gatilho Principal (Trigger / Select): Clica nos botões e controlos táteis
+    this.xrManager.onSelectCallback = (event) => {
+      const clicked = this.spatialPanels.handleRaycastClick(event.intersectedObject, event.uv);
+      // Se não atingiu nenhum botão, mas clicou na barra de título do painel (< 70px), permite agarrar também pelo gatilho frontal
+      if (!clicked && event.uv) {
+        const py = (1.0 - event.uv.y) * 680;
+        if (py <= 70) {
+          const ray = this.xrManager.getControllerRay(event.controllerIndex);
+          this.spatialPanels.startGrab(
+            event.intersectedObject,
+            event.controllerIndex,
+            event.point,
+            event.uv,
+            false,
+            ray.origin
+          );
+        }
+      }
     };
 
     this.xrManager.onSelectEndCallback = (_controllerIndex) => {
-      this.spatialPanels.releaseGrab();
+      if (this.spatialPanels.isGrabbing()) {
+        this.spatialPanels.releaseGrab();
+      }
     };
 
+    // 2. Gatilho Lateral (Grip / Squeeze): Agarra e reposiciona os painéis no espaço 3D (Question 5)
     this.xrManager.onSqueezeStartCallback = (event) => {
-      // O botão de Grip (pegar) agarra imediatamente o painel apontado
+      const ray = this.xrManager.getControllerRay(event.controllerIndex);
       this.spatialPanels.startGrab(
         event.intersectedObject,
         event.controllerIndex,
         event.point,
         event.uv,
-        true
+        true,
+        ray.origin
       );
     };
 

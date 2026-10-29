@@ -1,5 +1,7 @@
 /**
  * Gestor de WebXR, Controladores Meta Quest Touch Plus e Hand Tracking (Three.js)
+ * Otimizado para Meta Quest 3S: Gatilho Frontal (Select/Click), Gatilho Lateral (Squeeze/Grab),
+ * Feedback Háptico e Raios Repulsores Holográficos Tony Stark.
  */
 import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
@@ -26,15 +28,16 @@ export class XRManager {
   public hand1: THREE.XRHandSpace;
   public hand2: THREE.XRHandSpace;
 
-  // Raycasting e Apontadores Visuais
+  // Raycasting e Apontadores Visuais Repulsores
   private raycaster: THREE.Raycaster;
   private tempMatrix: THREE.Matrix4;
-  private rayLine1: THREE.Line;
-  private rayLine2: THREE.Line;
+  private rayLine1: THREE.Mesh;
+  private rayLine2: THREE.Mesh;
   private reticle: THREE.Mesh;
 
   // Alvos interativos na cena (Painéis 3D)
   private interactiveObjects: THREE.Object3D[] = [];
+  private interactiveObjectsProvider?: () => THREE.Object3D[];
 
   // Callbacks de interação
   public onSelectCallback?: (event: XRInteractionEvent) => void;
@@ -50,17 +53,18 @@ export class XRManager {
     this.raycaster = new THREE.Raycaster();
     this.tempMatrix = new THREE.Matrix4();
 
-    // 1. Configurar Raios Visuais (Laser Pointers)
-    this.rayLine1 = this.createRayLine();
-    this.rayLine2 = this.createRayLine();
+    // 1. Configurar Feixes Repulsores Holográficos (Laser Pointers Stark)
+    this.rayLine1 = this.createRayBeam();
+    this.rayLine2 = this.createRayBeam();
 
     // 2. Retículo / Cursor no Ponto de Contacto
-    const reticleGeo = new THREE.RingGeometry(0.015, 0.025, 32);
+    const reticleGeo = new THREE.RingGeometry(0.012, 0.024, 32);
     const reticleMat = new THREE.MeshBasicMaterial({
       color: 0x00e5ff,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.9
+      opacity: 0.95,
+      depthTest: false
     });
     this.reticle = new THREE.Mesh(reticleGeo, reticleMat);
     this.reticle.visible = false;
@@ -97,46 +101,47 @@ export class XRManager {
     this.hand2.add(handModelFactory.createHandModel(this.hand2, 'mesh'));
     this.scene.add(this.hand2);
 
-    // 5. Registar Eventos de Seleção (Pinch no Hand Tracking ou Trigger no Comando)
+    // 5. Registar Eventos de Disparo e Manipulação Tátil
     this.setupSelectEvents();
   }
 
-  private createRayLine(): THREE.Line {
-    const geometry = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(0, 0, -2.5) // Raio estende-se 2.5 metros à frente
-    ]);
-    const material = new THREE.LineBasicMaterial({
+  /**
+   * Cria um feixe laser cilíndrico repulsor com espessura real e visual Stark
+   */
+  private createRayBeam(): THREE.Mesh {
+    const geometry = new THREE.CylinderGeometry(0.0015, 0.0035, 1, 12);
+    geometry.rotateX(Math.PI / 2);
+    geometry.translate(0, 0, -0.5); // Extensão a partir da ponta do comando para -Z
+
+    const material = new THREE.MeshBasicMaterial({
       color: 0x00e5ff,
       transparent: true,
-      opacity: 0.6
+      opacity: 0.75,
+      depthWrite: false
     });
-    return new THREE.Line(geometry, material);
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.scale.set(1, 1, 2.5); // Comprimento padrão de 2.5 metros
+    return mesh;
   }
 
   private setupSelectEvents() {
-    // Gestão dinâmica de ligação/desligamento de comandos e mãos (Hot-Swapping)
+    // Gestão dinâmica de visibilidade de lasers
     this.controller1.addEventListener('connected', (event: any) => {
-      this.rayLine1.visible = true;
-      if (event.data?.targetRayMode === 'screen') {
-        this.rayLine1.visible = false;
-      }
+      this.rayLine1.visible = event.data?.targetRayMode !== 'screen';
     });
     this.controller1.addEventListener('disconnected', () => {
       this.rayLine1.visible = false;
     });
 
     this.controller2.addEventListener('connected', (event: any) => {
-      this.rayLine2.visible = true;
-      if (event.data?.targetRayMode === 'screen') {
-        this.rayLine2.visible = false;
-      }
+      this.rayLine2.visible = event.data?.targetRayMode !== 'screen';
     });
     this.controller2.addEventListener('disconnected', () => {
       this.rayLine2.visible = false;
     });
 
-    // Disparo por gatilho ou pinch do controlador 0
+    // Controlador 0: Gatilho Frontal (Trigger / Select) para cliques
     this.controller1.addEventListener('selectstart', () => {
       this.handleSelect(0);
       this.handleSelectStart(0);
@@ -144,15 +149,16 @@ export class XRManager {
     this.controller1.addEventListener('selectend', () => {
       if (this.onSelectEndCallback) this.onSelectEndCallback(0);
     });
+
+    // Controlador 0: Gatilho Lateral (Squeeze / Grip) para agarrar painéis no espaço
     this.controller1.addEventListener('squeezestart', () => {
       this.handleSqueezeStart(0);
     });
     this.controller1.addEventListener('squeezeend', () => {
       if (this.onSqueezeEndCallback) this.onSqueezeEndCallback(0);
     });
-    this.controller1.addEventListener('select', () => this.triggerHaptic(0));
 
-    // Disparo por gatilho ou pinch do controlador 1
+    // Controlador 1: Gatilho Frontal (Trigger / Select) para cliques
     this.controller2.addEventListener('selectstart', () => {
       this.handleSelect(1);
       this.handleSelectStart(1);
@@ -160,19 +166,20 @@ export class XRManager {
     this.controller2.addEventListener('selectend', () => {
       if (this.onSelectEndCallback) this.onSelectEndCallback(1);
     });
+
+    // Controlador 1: Gatilho Lateral (Squeeze / Grip) para agarrar painéis no espaço
     this.controller2.addEventListener('squeezestart', () => {
       this.handleSqueezeStart(1);
     });
     this.controller2.addEventListener('squeezeend', () => {
       if (this.onSqueezeEndCallback) this.onSqueezeEndCallback(1);
     });
-    this.controller2.addEventListener('select', () => this.triggerHaptic(1));
   }
 
   private handleSelectStart(controllerIndex: number) {
     const hit = this.raycastController(controllerIndex);
     if (hit) {
-      this.triggerHaptic(controllerIndex, 0.4, 30);
+      this.triggerHaptic(controllerIndex, 0.5, 40);
       if (this.onSelectStartCallback) {
         this.onSelectStartCallback({
           intersectedObject: hit.object,
@@ -187,7 +194,7 @@ export class XRManager {
   private handleSqueezeStart(controllerIndex: number) {
     const hit = this.raycastController(controllerIndex);
     if (hit) {
-      this.triggerHaptic(controllerIndex, 0.7, 60);
+      this.triggerHaptic(controllerIndex, 0.8, 70);
       if (this.onSqueezeStartCallback) {
         this.onSqueezeStartCallback({
           intersectedObject: hit.object,
@@ -199,34 +206,45 @@ export class XRManager {
     }
   }
 
-  private raycastController(controllerIndex: number): THREE.Intersection | null {
-    const controller = controllerIndex === 0 ? this.controller1 : this.controller2;
-    this.tempMatrix.identity().extractRotation(controller.matrixWorld);
-
-    this.raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-    this.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(this.tempMatrix);
-
-    const intersects = this.raycaster.intersectObjects(this.interactiveObjects, true);
-    return intersects.length > 0 ? intersects[0] : null;
-  }
-
   private handleSelect(controllerIndex: number) {
     const hit = this.raycastController(controllerIndex);
-    if (hit && this.onSelectCallback) {
-      this.onSelectCallback({
-        intersectedObject: hit.object,
-        point: hit.point,
-        uv: hit.uv,
-        controllerIndex
-      });
+    if (hit) {
+      this.triggerHaptic(controllerIndex, 0.6, 45);
+      if (this.onSelectCallback) {
+        this.onSelectCallback({
+          intersectedObject: hit.object,
+          point: hit.point,
+          uv: hit.uv,
+          controllerIndex
+        });
+      }
     }
+  }
+
+  /**
+   * Executa raycast a partir da ponta do comando especificado
+   */
+  private raycastController(controllerIndex: number): THREE.Intersection | null {
+    const controller = controllerIndex === 0 ? this.controller1 : this.controller2;
+    if (!controller) return null;
+
+    this.tempMatrix.identity().extractRotation(controller.matrixWorld);
+    this.raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+    this.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(this.tempMatrix).normalize();
+
+    const targets = this.getInteractiveTargets();
+    if (!targets || targets.length === 0) return null;
+
+    // Intersecta os planos interativos dos painéis (não recursivo para garantir ID e UV)
+    const intersects = this.raycaster.intersectObjects(targets, false);
+    return intersects.length > 0 ? intersects[0] : null;
   }
 
   public getControllerRay(controllerIndex: number): { origin: THREE.Vector3; direction: THREE.Vector3 } {
     const controller = controllerIndex === 0 ? this.controller1 : this.controller2;
     this.tempMatrix.identity().extractRotation(controller.matrixWorld);
     const origin = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
-    const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(this.tempMatrix);
+    const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(this.tempMatrix).normalize();
     return { origin, direction };
   }
 
@@ -241,23 +259,50 @@ export class XRManager {
     const session = this.renderer.xr.getSession();
     if (!session || !session.inputSources) return;
 
+    // Tenta primeiro o comando correspondente ao índice
     const source = session.inputSources[controllerIndex];
-    if (source && source.gamepad && source.gamepad.hapticActuators && source.gamepad.hapticActuators.length > 0) {
+    if (source?.gamepad?.hapticActuators && source.gamepad.hapticActuators.length > 0) {
       try {
         source.gamepad.hapticActuators[0].pulse(intensity, durationMs);
+        return;
       } catch {}
+    }
+
+    // Fallback: faz pulsar qualquer comando ativo que possua atuadores de vibração
+    for (const s of session.inputSources) {
+      if (s.gamepad?.hapticActuators && s.gamepad.hapticActuators.length > 0) {
+        try {
+          s.gamepad.hapticActuators[0].pulse(intensity, durationMs);
+          break;
+        } catch {}
+      }
     }
   }
 
   /**
-   * Define a lista de objetos 3D que podem ser apontados e clicados
+   * Regista um fornecedor dinâmico dos painéis interativos na cena
+   */
+  public setInteractiveObjectsProvider(provider: () => THREE.Object3D[]) {
+    this.interactiveObjectsProvider = provider;
+  }
+
+  /**
+   * Define a lista estática de objetos 3D que podem ser apontados e clicados
    */
   public setInteractiveObjects(objects: THREE.Object3D[]) {
     this.interactiveObjects = objects;
   }
 
+  public getInteractiveTargets(): THREE.Object3D[] {
+    if (this.interactiveObjectsProvider) {
+      return this.interactiveObjectsProvider();
+    }
+    return this.interactiveObjects;
+  }
+
   /**
    * Atualização contínua por frame (executada no render loop XR)
+   * Suporta apontar, retículo e redimensionamento dinâmico do feixe em ambos os comandos
    */
   public update() {
     if (!this.renderer.xr.isPresenting) {
@@ -265,21 +310,34 @@ export class XRManager {
       return;
     }
 
-    // Faz raycasting contínuo com o controlador 0 (mão dominante)
-    this.tempMatrix.identity().extractRotation(this.controller1.matrixWorld);
-    this.raycaster.ray.origin.setFromMatrixPosition(this.controller1.matrixWorld);
-    this.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(this.tempMatrix);
+    const hit1 = this.raycastController(0);
+    const hit2 = this.raycastController(1);
 
-    const intersects = this.raycaster.intersectObjects(this.interactiveObjects, true);
+    // Ajusta o alcance visual dos feixes repulsores para parar na superfície do painel
+    if (hit1) {
+      this.rayLine1.scale.z = Math.max(0.1, hit1.distance);
+    } else {
+      this.rayLine1.scale.z = 2.5;
+    }
 
-    if (intersects.length > 0) {
-      const hit = intersects[0];
+    if (hit2) {
+      this.rayLine2.scale.z = Math.max(0.1, hit2.distance);
+    } else {
+      this.rayLine2.scale.z = 2.5;
+    }
+
+    // O retículo segue o comando que estiver a apontar
+    const hit = hit1 || hit2;
+    const activeIndex = hit1 ? 0 : 1;
+
+    if (hit) {
       this.reticle.visible = true;
       this.reticle.position.copy(hit.point);
 
-      // Alinha o retículo com a normal da superfície atingida
       if (hit.face) {
-        this.reticle.lookAt(hit.point.clone().add(hit.face.normal));
+        // Afasta o retículo 3mm da superfície ao longo da normal para eliminar Z-fighting
+        this.reticle.position.addScaledVector(hit.face.normal, 0.003);
+        this.reticle.lookAt(this.reticle.position.clone().add(hit.face.normal));
       }
 
       if (this.onHoverCallback) {
@@ -287,7 +345,7 @@ export class XRManager {
           intersectedObject: hit.object,
           point: hit.point,
           uv: hit.uv,
-          controllerIndex: 0
+          controllerIndex: activeIndex
         });
       }
     } else {
@@ -298,4 +356,3 @@ export class XRManager {
     }
   }
 }
-

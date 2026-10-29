@@ -114,7 +114,7 @@ export class SpatialPanelManager3D {
     this.createDockPanel();
   }
 
-  private createPanel(id: string, title: string, x: number, y: number, z: number, rotY: number) {
+  private createPanel(id: string, title: string, x: number, y: number, z: number, _rotY: number) {
     const canvas = document.createElement('canvas');
     canvas.width = 1024;
     canvas.height = 680;
@@ -136,16 +136,24 @@ export class SpatialPanelManager3D {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.userData = { panelId: id, isPanelMesh: true };
 
+    const panelGroup = new THREE.Group();
+    panelGroup.position.set(x, y, z);
+
+    // Orienta a face frontal (+Z) diretamente para o utilizador no centro (0, y, 0)
+    // O rotateY(Math.PI) compensa o lookAt do Three.js para que o texto nunca fique espelhado
+    const dummy = new THREE.Object3D();
+    dummy.position.set(x, y, z);
+    dummy.lookAt(0, y, 0);
+    dummy.rotateY(Math.PI);
+    panelGroup.quaternion.copy(dummy.quaternion);
+
+    panelGroup.add(mesh);
+
     // Borda exterior luminosa wireframe com glow elétrico
     const borderGeo = new THREE.EdgesGeometry(geometry);
     const borderMat = new THREE.LineBasicMaterial({ color: 0x00e5ff, linewidth: 2, transparent: true, opacity: 0.85 });
     const wireframe = new THREE.LineSegments(borderGeo, borderMat);
-    mesh.add(wireframe);
-
-    const panelGroup = new THREE.Group();
-    panelGroup.position.set(x, y, z);
-    panelGroup.rotation.y = rotY;
-    panelGroup.add(mesh);
+    panelGroup.add(wireframe);
 
     this.group.add(panelGroup);
 
@@ -184,14 +192,14 @@ export class SpatialPanelManager3D {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.userData = { panelId: 'wrist_dock', isPanelMesh: true };
 
-    const borderGeo = new THREE.EdgesGeometry(geometry);
-    const borderMat = new THREE.LineBasicMaterial({ color: 0x00e5ff, linewidth: 2 });
-    mesh.add(new THREE.LineSegments(borderGeo, borderMat));
-
     const dockGroup = new THREE.Group();
     dockGroup.position.set(-0.45, -0.42, -0.95);
     dockGroup.rotation.set(-0.35, 0.25, 0);
     dockGroup.add(mesh);
+
+    const borderGeo = new THREE.EdgesGeometry(geometry);
+    const borderMat = new THREE.LineBasicMaterial({ color: 0x00e5ff, linewidth: 2 });
+    dockGroup.add(new THREE.LineSegments(borderGeo, borderMat));
 
     this.group.add(dockGroup);
 
@@ -223,6 +231,7 @@ export class SpatialPanelManager3D {
 
   /**
    * Efeito Billboard Inteligente com interpolação slerp suave no eixo Y
+   * Garante que a face frontal (+Z) dos painéis está sempre virada para os olhos do utilizador.
    */
   public updateBillboard(camera: THREE.Camera) {
     if (this.isFocusCollapsed) return;
@@ -232,12 +241,15 @@ export class SpatialPanelManager3D {
     this.panels.forEach((p) => {
       if (!p.group.visible || p === this.grabbedPanel || p.isDock) return;
 
-      const lookTarget = new THREE.Vector3(camPos.x, p.group.position.y, camPos.z);
-      const m = new THREE.Matrix4().lookAt(p.group.position, lookTarget, new THREE.Vector3(0, 1, 0));
-      const targetQuat = new THREE.Quaternion().setFromRotationMatrix(m);
+      const dummy = new THREE.Object3D();
+      dummy.position.copy(p.group.position);
+      dummy.lookAt(camPos.x, p.group.position.y, camPos.z);
+      // Três.js lookAt aponta o eixo local -Z ao alvo. Rodamos 180° em Y para que a face frontal (+Z)
+      // aponte diretamente aos olhos do utilizador, eliminando qualquer efeito de texto invertido/espelhado.
+      dummy.rotateY(Math.PI);
 
-      // Slerp suave (0.04) para evitar rotações bruscas
-      p.group.quaternion.slerp(targetQuat, 0.04);
+      // Slerp suave (0.05) mantendo a face frontal orientada para o utilizador
+      p.group.quaternion.slerp(dummy.quaternion, 0.05);
     });
   }
 
@@ -1017,7 +1029,8 @@ export class SpatialPanelManager3D {
     controllerIndex: number,
     hitPoint: THREE.Vector3,
     uv?: THREE.Vector2,
-    forceGrab: boolean = false
+    forceGrab: boolean = false,
+    controllerOrigin?: THREE.Vector3
   ): boolean {
     const panelId = mesh.userData?.panelId;
     if (!panelId) return false;
@@ -1026,11 +1039,15 @@ export class SpatialPanelManager3D {
     if (!panel || !panel.group.visible) return false;
 
     const py = uv ? (1.0 - uv.y) * 680 : 0;
-    // Permite agarrar pela barra superior (< 70px) ou por botão lateral
+    // Permite agarrar pela barra superior (< 70px) ou por botão lateral / trigger squeeze
     if (forceGrab || !uv || py <= 70) {
       this.grabbedPanel = panel;
       this.grabControllerIndex = controllerIndex;
-      this.grabDistance = Math.max(0.7, Math.min(3.0, hitPoint.distanceTo(panel.group.position) + 1.2));
+      if (controllerOrigin) {
+        this.grabDistance = Math.max(0.6, Math.min(3.5, hitPoint.distanceTo(controllerOrigin)));
+      } else {
+        this.grabDistance = Math.max(0.6, Math.min(3.5, hitPoint.distanceTo(panel.group.position) + 0.9));
+      }
       soundFX.playClick();
       return true;
     }
@@ -1057,17 +1074,21 @@ export class SpatialPanelManager3D {
     const ray = getRayFn(this.grabControllerIndex);
     const targetPos = ray.origin.clone().add(ray.direction.clone().multiplyScalar(this.grabDistance));
 
+    const camPos = new THREE.Vector3();
+    camera.getWorldPosition(camPos);
+
     this.grabbedPanel.group.position.lerp(targetPos, 0.20);
-    this.grabbedPanel.group.lookAt(camera.position.x, this.grabbedPanel.group.position.y, camera.position.z);
+    this.grabbedPanel.group.lookAt(camPos.x, this.grabbedPanel.group.position.y, camPos.z);
+    this.grabbedPanel.group.rotateY(Math.PI);
   }
 
-  public handleRaycastClick(mesh: THREE.Object3D, uv?: THREE.Vector2) {
-    if (!uv) return;
+  public handleRaycastClick(mesh: THREE.Object3D, uv?: THREE.Vector2): boolean {
+    if (!uv) return false;
     const panelId = mesh.userData?.panelId;
-    if (!panelId) return;
+    if (!panelId) return false;
 
     const panel = this.panels.get(panelId);
-    if (!panel) return;
+    if (!panel) return false;
 
     // Converter UV para resolução interna do Canvas (1024 x 680 ou 1024 x 200 para o dock)
     const cw = panel.canvas.width;
@@ -1101,9 +1122,10 @@ export class SpatialPanelManager3D {
         if (this.onPanelAction) {
           this.onPanelAction(btn.action, panelId, btn.data);
         }
-        break;
+        return true;
       }
     }
+    return false;
   }
 
   // ==========================================
@@ -1112,14 +1134,20 @@ export class SpatialPanelManager3D {
 
   private loadSavedLayout() {
     try {
-      const raw = localStorage.getItem('jarvis_spatial_positions_v3');
+      const raw = localStorage.getItem('jarvis_spatial_positions_v5');
       if (!raw) return;
       const data = JSON.parse(raw);
       Object.entries(data).forEach(([id, pos]: [string, any]) => {
         const panel = this.panels.get(id);
         if (panel && pos) {
           panel.group.position.set(pos.x, pos.y, pos.z);
-          if (pos.rotY !== undefined) panel.group.rotation.y = pos.rotY;
+          if (!panel.isDock) {
+            const dummy = new THREE.Object3D();
+            dummy.position.set(pos.x, pos.y, pos.z);
+            dummy.lookAt(0, pos.y, 0);
+            dummy.rotateY(Math.PI);
+            panel.group.quaternion.copy(dummy.quaternion);
+          }
           if (pos.visible !== undefined) panel.group.visible = pos.visible;
         }
       });
@@ -1140,7 +1168,7 @@ export class SpatialPanelManager3D {
           visible: p.group.visible
         };
       });
-      localStorage.setItem('jarvis_spatial_positions_v3', JSON.stringify(layout));
+      localStorage.setItem('jarvis_spatial_positions_v5', JSON.stringify(layout));
     } catch (e) {}
   }
 
@@ -1171,7 +1199,10 @@ export class SpatialPanelManager3D {
   public getInteractiveMeshes(): THREE.Object3D[] {
     const list: THREE.Object3D[] = [];
     this.panels.forEach((p) => {
-      if (p.group.visible) list.push(p.mesh);
+      if (p.group.visible) {
+        p.mesh.updateWorldMatrix(true, false);
+        list.push(p.mesh);
+      }
     });
     return list;
   }
